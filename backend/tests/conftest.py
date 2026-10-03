@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.auth.dependencies import get_current_user
 from backend.app.core.config import Settings, get_settings
+from backend.app.db.repositories import get_repository
 from backend.app.main import app
 from backend.app.schemas.auth import AuthUser, UserRole
 
@@ -38,6 +39,15 @@ TEST_ADMIN_USER = AuthUser(
     role=UserRole.ADMIN,
     full_name="System Admin",
 )
+
+
+@pytest.fixture(autouse=True)
+def clean_repository() -> Generator[None, None, None]:
+    """Ensure every test executes with a clean repository store pre-seeded with baseline fixtures."""
+    repo = get_repository()
+    repo.reset()
+    yield
+    repo.reset()
 
 
 @pytest.fixture
