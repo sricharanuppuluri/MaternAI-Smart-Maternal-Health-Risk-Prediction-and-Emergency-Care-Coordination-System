@@ -1,6 +1,6 @@
 """Main application entry point for MaternAI FastAPI Backend.
 
-Phase 0 establishes the baseline application, CORS, root health check,
+Establishes the baseline application, CORS, error handling, root health check,
 and /api/v1 router foundation.
 """
 
@@ -8,11 +8,15 @@ from contextlib import asynccontextmanager
 import logging
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from backend.app.api.v1.router import api_router
 from backend.app.core.config import get_settings
+from backend.app.core.errors import AppError
+from backend.app.schemas.common import ApiErrorResponse
 from backend.app.schemas.health import HealthStatus
 
 # Configure basic logging
@@ -54,6 +58,50 @@ def create_application() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # --------------------------------------------------------------------------
+    # Standardized Error Handlers (Conforms to MaternAI standard error envelope)
+    # --------------------------------------------------------------------------
+    @app.exception_handler(AppError)
+    async def app_error_handler(_: Request, exc: AppError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                }
+            },
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error_handler(_: Request, exc: RequestValidationError) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            content={
+                "error": {
+                    "code": "VALIDATION_ERROR",
+                    "message": "Request payload validation failed",
+                    "details": {"errors": exc.errors()},
+                }
+            },
+        )
+
+    @app.exception_handler(HTTPException)
+    async def generic_http_error_handler(_: Request, exc: HTTPException) -> JSONResponse:
+        if isinstance(exc.detail, dict) and "error" in exc.detail:
+            return JSONResponse(status_code=exc.status_code, content=exc.detail)
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": {
+                    "code": "HTTP_ERROR",
+                    "message": str(exc.detail),
+                    "details": {},
+                }
+            },
+        )
 
     # Root health/status endpoint
     @app.get(

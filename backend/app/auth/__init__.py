@@ -1,12 +1,19 @@
-"""Authentication and authorization package.
+"""Authentication and authorization package."""
 
-Planned architecture:
-Supabase Auth -> FastAPI identity/role validation -> PostgreSQL RLS -> Assignment-based authorization
+from backend.app.auth.dependencies import (
+    get_current_user,
+    require_admin,
+    require_asha,
+    require_mother,
+    require_role,
+    verify_patient_access,
+)
 
-Roles:
-- MOTHER
-- ASHA
-- ADMIN (Future, server-controlled)
-
-Note: Full authentication is planned for the Authentication/RLS phase.
-"""
+__all__ = [
+    "get_current_user",
+    "require_role",
+    "require_mother",
+    "require_asha",
+    "require_admin",
+    "verify_patient_access",
+]
