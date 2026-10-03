@@ -4,7 +4,7 @@ This directory contains Supabase PostgreSQL migrations and database scripts for 
 
 ## Migrations
 
-- `20261003000001_initial_schema.sql`: Baseline relational schema establishing all 17 documented entities, indexes, security functions (`current_user_id()`, `current_user_role()`, `is_assigned_asha()`), and Row Level Security (RLS) policies.
+- `20261003000001_initial_schema.sql`: Baseline relational schema establishing all 17 documented entities, indexes, hardened security functions (`current_user_id()`, `current_user_role()`, `is_assigned_asha()`), anti-escalation triggers, and comprehensive Row Level Security (RLS) policies.
 
 ## Documented Relational Entities
 
@@ -26,9 +26,28 @@ This directory contains Supabase PostgreSQL migrations and database scripts for 
 16. `chat_messages`: Structured message transcript within a chat session.
 17. `audit_logs`: Immutable audit trails recording critical workflow transitions and data access.
 
-## Row Level Security (RLS) Principles
+## Security Hardening Details
 
-- Unauthenticated access is blocked across all protected tables.
-- Mothers can only access records associated with their own `mother_profile`.
-- ASHAs can only access mothers, alerts, visits, and follow-ups explicitly assigned to them in `asha_assignments`.
-- ADMIN role is restricted to server-side operations and verified by `current_user_role() = 'ADMIN'`.
+### 1. Hardened SECURITY DEFINER Helper Functions
+All helper functions run with explicitly configured `search_path`:
+```sql
+CREATE OR REPLACE FUNCTION public.current_user_id() ...
+SET search_path = public, auth;
+```
+This protects against search-path hijacking under Supabase / PostgreSQL execution.
+
+### 2. Database Triggers Preventing Privilege & State Escalation
+- `trg_prevent_role_escalation` on `public.profiles`: Aborts any `UPDATE` that attempts to change `role` unless `current_user_role() = 'ADMIN'`.
+- `trg_prevent_mother_authoritative_update` on `public.mother_profiles`: Aborts any client-side `UPDATE` attempting to alter authoritative fields (`assigned_asha_id`, `last_risk_level`) unless executed by `ADMIN`.
+
+### 3. Comprehensive 17-Entity RLS Policies
+All 17 tables enforce Row Level Security (`ALTER TABLE ... ENABLE ROW LEVEL SECURITY`). Every table has explicit `SELECT`, `INSERT`, `UPDATE`, and `DELETE` policies:
+- **Default Deny / Server-Controlled**: `model_versions`, `predictions`, `safety_events`, `audit_logs` prohibit direct client writes; inserts/updates are restricted to `ADMIN` or database service role.
+- **Audit Logs Immutability**: `audit_logs` completely disallows `UPDATE` and `DELETE` for all roles (including ADMIN).
+- **Patient Isolation**: Mothers have strictly scoped `SELECT`, `INSERT`, and `UPDATE` access to their own records only (`mother_id = auth.uid()`).
+- **Assignment-Scoped Worker Access**: ASHAs can only query or update records for mothers explicitly assigned to them via active `asha_assignments` (`is_assigned_asha(mother_id)`).
+
+## Verification & Testing Boundaries
+
+- **Static Analysis & Contract Testing**: Executable via `pytest backend/tests/security/` (verifies SQL migration AST/regex invariants, search path definitions, trigger logic, and API dependency boundaries).
+- **Live Supabase Integration Testing**: Requires a running Supabase local container (`supabase start`) or remote PostgreSQL instance applying `20261003000001_initial_schema.sql` and issuing role-scoped SQL queries (`SET ROLE authenticated`, `SET request.jwt.claim.sub = '...'`). Live DB testing is required prior to production deployment.
