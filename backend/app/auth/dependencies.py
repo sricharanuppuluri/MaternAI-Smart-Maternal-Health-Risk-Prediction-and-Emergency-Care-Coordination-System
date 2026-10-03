@@ -1,36 +1,44 @@
 """Production authentication and authorization dependencies for FastAPI endpoints.
 
 Enforces:
-- 401 Unauthorized when Bearer token is missing, malformed, or invalid.
+- 401 Unauthorized when Bearer token is missing, malformed, expired, or unverified.
+- Cryptographic Supabase JWT signature and claims verification.
+- Authoritative application role resolution strictly from the database profiles table.
+- Rejection of client-submitted roles or unverified token claims.
 - 403 Forbidden when authenticated user lacks required role or access.
-- Role resolution: MOTHER, ASHA, ADMIN.
 - Patient isolation: Mother A cannot access Mother B.
 - Assignment boundary: ASHA can only access assigned mothers.
-
-Note:
-This is the strict production authentication dependency.
-Test-specific mock users and token parsers are strictly isolated in testing fixtures
-and must NEVER be accepted by this production dependency.
+- Isolation of test authentication via FastAPI dependency overrides.
 """
 
 from typing import List, Optional
 from uuid import UUID
 from fastapi import Depends, Header
+import jwt
+from jwt.exceptions import (
+    DecodeError,
+    ExpiredSignatureError,
+    InvalidSignatureError,
+    InvalidTokenError,
+)
 
 from backend.app.core.config import get_settings
 from backend.app.core.errors import ForbiddenError, UnauthorizedError
+from backend.app.db.repositories import get_repository
 from backend.app.schemas.auth import AuthUser, UserRole
 
 
 async def get_current_user(
     authorization: Optional[str] = Header(None, description="Supabase Auth Bearer token"),
 ) -> AuthUser:
-    """Validate Supabase JWT Bearer token and resolve authenticated user identity.
+    """Validate Supabase JWT Bearer token and resolve authoritative user identity.
     
     Production Authentication Rules:
     - Missing or malformed header -> 401 Unauthorized.
     - Non-JWT or arbitrary string tokens -> 401 Unauthorized.
-    - Full cryptographic verification with Supabase GoTrue / public JWKS is scheduled for Phase 3.
+    - Cryptographically verified against SUPABASE_JWT_SECRET.
+    - If Supabase authentication is unconfigured, fails closed with 401.
+    - Role is resolved strictly from database profiles table, NEVER trusted from client claims.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise UnauthorizedError(
@@ -50,16 +58,69 @@ async def get_current_user(
 
     settings = get_settings()
 
-    # In Phase 2 contract foundation, full Supabase GoTrue public-key validation is deferred to Phase 3.
-    # In production without an active Supabase JWT verification service, unverified tokens cannot be accepted.
-    if not settings.is_supabase_configured:
+    # Fail closed if verification secret is unconfigured
+    if not settings.SUPABASE_JWT_SECRET:
         raise UnauthorizedError(
             message="Supabase authentication service is not configured. Production JWT verification required."
         )
 
-    # Cryptographic JWT decoding (Phase 3 production implementation)
-    raise UnauthorizedError(
-        message="Cryptographic Supabase JWT verification is scheduled for Phase 3. Unverified tokens rejected."
+    # Cryptographic JWT decoding and signature validation
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            options={"verify_signature": True, "verify_exp": True, "verify_aud": False},
+        )
+    except ExpiredSignatureError:
+        raise UnauthorizedError(message="Token has expired. Please re-authenticate.")
+    except (InvalidSignatureError, DecodeError, InvalidTokenError):
+        raise UnauthorizedError(
+            message="Invalid token signature: unverified token rejected."
+        )
+
+    # Extract authenticated user identity from 'sub' claim
+    sub = payload.get("sub")
+    if not sub:
+        raise UnauthorizedError(message="Token missing subject ('sub') claim.")
+    try:
+        user_id = UUID(str(sub))
+    except (ValueError, TypeError):
+        raise UnauthorizedError(message="Token subject claim is not a valid UUID.")
+
+    # Resolve authoritative application role strictly from database profiles table
+    repo = get_repository()
+    profile = repo.get_profile(user_id)
+
+    if profile:
+        raw_role = profile.get("role")
+        if isinstance(raw_role, UserRole):
+            role = raw_role
+        elif isinstance(raw_role, str):
+            try:
+                role = UserRole(raw_role)
+            except ValueError:
+                role = UserRole.MOTHER
+        else:
+            role = UserRole.MOTHER
+        full_name = profile.get("full_name") or "User"
+        phone = profile.get("phone")
+    else:
+        # Default unprivileged role for fresh authenticated user
+        # Security invariant: NEVER trust client-submitted roles or JWT user_metadata claims!
+        role = UserRole.MOTHER
+        user_meta = payload.get("user_metadata") or {}
+        full_name = user_meta.get("full_name") or "New User"
+        phone = user_meta.get("phone")
+
+    email = payload.get("email")
+
+    return AuthUser(
+        id=user_id,
+        email=email,
+        role=role,
+        full_name=full_name,
+        phone=phone,
     )
 
 

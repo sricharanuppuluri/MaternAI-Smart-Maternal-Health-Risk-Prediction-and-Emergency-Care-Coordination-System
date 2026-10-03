@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     # Supabase Configuration (Server-side only; never expose key to frontend)
     SUPABASE_URL: Optional[str] = None
     SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None
+    SUPABASE_DB_URL: Optional[str] = None
+    DATABASE_URL: Optional[str] = None
+
+    # Persistent Storage Configuration
+    DATABASE_FILE: str = "data/maternai.db"
 
     # ML Model Configuration (Screening / Decision Support)
     MODEL_PATH: str = "ml/models/maternai_risk_model.joblib"
@@ -50,6 +57,11 @@ class Settings(BaseSettings):
     def is_supabase_configured(self) -> bool:
         """Check if Supabase credentials are configured."""
         return bool(self.SUPABASE_URL and self.SUPABASE_SERVICE_ROLE_KEY)
+
+    @property
+    def is_jwt_configured(self) -> bool:
+        """Check if Supabase JWT verification secret is configured."""
+        return bool(self.SUPABASE_JWT_SECRET)
 
 
 @lru_cache
