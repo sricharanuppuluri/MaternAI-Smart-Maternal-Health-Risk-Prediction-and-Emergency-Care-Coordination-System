@@ -3,65 +3,130 @@ import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../../auth';
 import { Input, Button, AlertBanner } from '../../components/common';
 import type { UserRole } from '../../types/auth';
+import { isValidEmail } from '../../utils/validation';
 
 export const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { signIn, error: authError, clearError } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const [role, setRole] = useState<UserRole>('MOTHER');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  // Return to intended destination or portal home
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname || (role === 'ASHA' ? '/asha' : '/mother');
+  // Return to intended destination or appropriate role portal
+  const from =
+    (location.state as { from?: { pathname: string } })?.from?.pathname ||
+    (role === 'ASHA' ? '/asha' : '/mother');
+
+  const validateForm = (): boolean => {
+    const errors: { email?: string; password?: string } = {};
+
+    if (!email.trim()) {
+      errors.email = 'Email address or mobile identifier is required';
+    } else if (email.includes('@') && !isValidEmail(email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setLocalError(null);
+    clearError();
+
+    if (!validateForm()) {
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      await login(role, email || undefined);
+      await signIn({
+        email: email.trim(),
+        password: password || undefined,
+        role,
+      });
       navigate(from, { replace: true });
-    } catch {
-      setError('Unable to authenticate. Please check your credentials.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Authentication failed. Please check your credentials.';
+      setLocalError(msg);
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleQuickDemo = async (demoRole: UserRole) => {
+    setRole(demoRole);
+    setLocalError(null);
+    clearError();
+    setIsSubmitting(true);
+
+    try {
+      await signIn({
+        email: `${demoRole.toLowerCase()}@maternai.org`,
+        role: demoRole,
+      });
+      navigate(demoRole === 'ASHA' ? '/asha' : '/mother', { replace: true });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Demo sign in failed';
+      setLocalError(msg);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const activeError = localError || authError;
+
   return (
     <div className="auth-form-card" role="region" aria-labelledby="login-heading">
       <h2 id="login-heading" className="auth-heading">Sign In to MaternAI</h2>
-      <p className="auth-instructions">Select your care role and sign in to access your portal</p>
+      <p className="auth-instructions">Access the secure maternal care coordination portal</p>
 
-      {error && <AlertBanner type="danger" message={error} onDismiss={() => setError(null)} />}
+      {activeError && (
+        <AlertBanner
+          type="danger"
+          message={activeError}
+          onDismiss={() => {
+            setLocalError(null);
+            clearError();
+          }}
+        />
+      )}
 
       <form onSubmit={handleSubmit} className="auth-form" noValidate>
-        {/* Role Selection Tabs */}
-        <div className="role-selector-group" role="radiogroup" aria-label="Care Role">
-          <label className="input-label">I am signing in as:</label>
+        {/* Care Role Selection */}
+        <div className="role-selector-group" role="radiogroup" aria-label="Care Portal Role">
+          <label className="input-label">Signing in as:</label>
           <div className="role-toggle-buttons">
             <button
               type="button"
               role="radio"
               aria-checked={role === 'MOTHER'}
               className={`role-toggle-btn ${role === 'MOTHER' ? 'active' : ''}`}
-              onClick={() => setRole('MOTHER')}
+              onClick={() => {
+                setRole('MOTHER');
+                setFieldErrors({});
+              }}
             >
-              👩 Expecting / New Mother
+              👩 Mother Portal
             </button>
             <button
               type="button"
               role="radio"
               aria-checked={role === 'ASHA'}
               className={`role-toggle-btn ${role === 'ASHA' ? 'active' : ''}`}
-              onClick={() => setRole('ASHA')}
+              onClick={() => {
+                setRole('ASHA');
+                setFieldErrors({});
+              }}
             >
-              🩺 ASHA Health Worker
+              🩺 ASHA Portal
             </button>
           </div>
         </div>
@@ -72,8 +137,13 @@ export const LoginPage: React.FC = () => {
           label="Email Address or Mobile Identifier"
           placeholder={role === 'MOTHER' ? 'mother@maternai.org' : 'asha.worker@maternai.org'}
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          helperText="Phase 1 development: Enter any demo identifier or leave default"
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: undefined });
+          }}
+          error={fieldErrors.email}
+          required
+          autoComplete="email"
         />
 
         <Input
@@ -82,8 +152,13 @@ export const LoginPage: React.FC = () => {
           label="Password"
           placeholder="••••••••"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          helperText="Phase 1 uses client session mock; Supabase Auth integrates in Phase 3"
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: undefined });
+          }}
+          error={fieldErrors.password}
+          autoComplete="current-password"
+          helperText="Enter your Supabase Auth account password"
         />
 
         <Button
@@ -95,6 +170,31 @@ export const LoginPage: React.FC = () => {
           Sign In to {role === 'MOTHER' ? 'Mother Portal' : 'ASHA Portal'}
         </Button>
       </form>
+
+      {/* Demo / Quick Sign-In for offline local development */}
+      <div className="demo-login-box mt-4 p-3 border rounded text-center">
+        <p className="text-xs text-muted mb-2 font-semibold">Development & Offline Demo Shortcuts:</p>
+        <div className="flex gap-2 justify-center">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleQuickDemo('MOTHER')}
+            disabled={isSubmitting}
+          >
+            Demo as Mother
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handleQuickDemo('ASHA')}
+            disabled={isSubmitting}
+          >
+            Demo as ASHA
+          </Button>
+        </div>
+      </div>
 
       <div className="auth-footer-links">
         <span>Don't have an account yet? </span>
