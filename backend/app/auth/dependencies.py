@@ -1,17 +1,23 @@
-"""Authentication and authorization dependencies for FastAPI endpoints.
+"""Production authentication and authorization dependencies for FastAPI endpoints.
 
 Enforces:
-- 401 Unauthorized when Bearer token is missing or invalid.
+- 401 Unauthorized when Bearer token is missing, malformed, or invalid.
 - 403 Forbidden when authenticated user lacks required role or access.
 - Role resolution: MOTHER, ASHA, ADMIN.
 - Patient isolation: Mother A cannot access Mother B.
 - Assignment boundary: ASHA can only access assigned mothers.
+
+Note:
+This is the strict production authentication dependency.
+Test-specific mock users and token parsers are strictly isolated in testing fixtures
+and must NEVER be accepted by this production dependency.
 """
 
 from typing import List, Optional
 from uuid import UUID
 from fastapi import Depends, Header
 
+from backend.app.core.config import get_settings
 from backend.app.core.errors import ForbiddenError, UnauthorizedError
 from backend.app.schemas.auth import AuthUser, UserRole
 
@@ -19,10 +25,12 @@ from backend.app.schemas.auth import AuthUser, UserRole
 async def get_current_user(
     authorization: Optional[str] = Header(None, description="Supabase Auth Bearer token"),
 ) -> AuthUser:
-    """Validate Bearer token and resolve authenticated user identity.
+    """Validate Supabase JWT Bearer token and resolve authenticated user identity.
     
-    In Phase 2, this provides the authoritative contract interface.
-    Raises 401 Unauthorized if Authorization header is missing or malformed.
+    Production Authentication Rules:
+    - Missing or malformed header -> 401 Unauthorized.
+    - Non-JWT or arbitrary string tokens -> 401 Unauthorized.
+    - Full cryptographic verification with Supabase GoTrue / public JWKS is scheduled for Phase 3.
     """
     if not authorization or not authorization.startswith("Bearer "):
         raise UnauthorizedError(
@@ -33,30 +41,25 @@ async def get_current_user(
     if not token:
         raise UnauthorizedError(message="Bearer token is empty or invalid.")
 
-    # Phase 2 mock/header token format for contract testing: "test-<role>-<id>" or real JWT
-    # Real JWT verification with Supabase GoTrue will be integrated in Phase 3.
-    user_id = "00000000-0000-0000-0000-000000000001"
-    role = UserRole.MOTHER
-    full_name = "Test Mother"
+    # Validate JWT structure (header.payload.signature)
+    segments = token.split(".")
+    if len(segments) != 3:
+        raise UnauthorizedError(
+            message="Invalid JWT token structure. Production tokens must be valid signed JWTs."
+        )
 
-    if "asha" in token.lower():
-        role = UserRole.ASHA
-        full_name = "Test ASHA"
-        user_id = "00000000-0000-0000-0000-000000000002"
-    elif "admin" in token.lower():
-        role = UserRole.ADMIN
-        full_name = "System Admin"
-        user_id = "00000000-0000-0000-0000-000000000003"
-    elif "mother_b" in token.lower():
-        role = UserRole.MOTHER
-        full_name = "Mother B"
-        user_id = "00000000-0000-0000-0000-000000000004"
+    settings = get_settings()
 
-    return AuthUser(
-        id=UUID(user_id),
-        email=f"{role.value.lower()}@example.com",
-        role=role,
-        full_name=full_name,
+    # In Phase 2 contract foundation, full Supabase GoTrue public-key validation is deferred to Phase 3.
+    # In production without an active Supabase JWT verification service, unverified tokens cannot be accepted.
+    if not settings.is_supabase_configured:
+        raise UnauthorizedError(
+            message="Supabase authentication service is not configured. Production JWT verification required."
+        )
+
+    # Cryptographic JWT decoding (Phase 3 production implementation)
+    raise UnauthorizedError(
+        message="Cryptographic Supabase JWT verification is scheduled for Phase 3. Unverified tokens rejected."
     )
 
 
