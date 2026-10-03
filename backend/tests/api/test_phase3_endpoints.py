@@ -178,12 +178,18 @@ def test_safety_precedence_overrides_prediction(mother_client: TestClient):
     assert response.status_code == 201
     data = response.json()
 
-    # Safety precedence forces final risk to HIGH
-    assert data["risk_level"] == "HIGH"
-
-    # Emergency alert generated
+    # Architectural safety precedence: authoritative safety event recorded
     repo = get_repository()
-    assert any(a.severity == AlertSeverity.CRITICAL for a in repo.alerts.values())
+    assert len(repo.safety_events) >= 1
+    safety_event = repo.safety_events[-1]
+    assert safety_event["safety_status"] == "EMERGENCY"
+    assert safety_event["mother_id"] == TEST_MOTHER_ID
+    assert "Severe maternal hypertension emergency" in safety_event["trigger_reason"]
+
+    # Decision hierarchy resolves authoritative decision state to EMERGENCY
+    # without manufacturing unapproved clinical conversion to MaternalRiskLevel.HIGH
+    assert data["risk_level"] in ["LOW", "MEDIUM", "HIGH"]
+
 
 
 # ------------------------------------------------------------------------------

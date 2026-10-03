@@ -12,6 +12,7 @@ from backend.app.safety.evaluator import get_safety_engine
 from backend.app.schemas.alert import AlertResponse, AlertSeverity, AlertStatus
 from backend.app.schemas.auth import AuthUser
 from backend.app.schemas.ml import MLRiskInput
+from backend.app.schemas.mother import MaternalRiskLevel
 from backend.app.schemas.prediction import PredictionRequest, PredictionResponse
 
 
@@ -88,9 +89,10 @@ class PredictionService:
                 details={"prediction_id": str(pred_id)},
             )
 
-        # Generate alert if HIGH risk or EMERGENCY
-        if decision_result.final_risk_level.value == "HIGH" or safety_result.is_emergency:
-            severity = AlertSeverity.CRITICAL if safety_result.is_emergency else AlertSeverity.HIGH
+        # Generate alert if screening risk level is HIGH
+        # Note: Deterministic safety-to-alert mappings (such as EMERGENCY -> CRITICAL alert)
+        # remain explicitly deferred pending approved clinical safety specification (docs/api_contracts.md Section 6.2).
+        if decision_result.final_risk_level == MaternalRiskLevel.HIGH:
             alert_id = uuid4()
             assigned_ashas = self.repo.get_assigned_mother_ids(mother_id)
             # Find asha assigned to this mother
@@ -105,7 +107,7 @@ class PredictionService:
                 mother_id=mother_id,
                 mother_name=self.repo.mother_profiles.get(mother_id, {}).get("full_name", "Patient"),
                 asha_id=assigned_asha_id,
-                severity=severity,
+                severity=AlertSeverity.HIGH,
                 status=AlertStatus.NEW,
                 trigger_reason=decision_result.trigger_reason or f"Screening risk level: {decision_result.final_risk_level.value}",
                 safety_event_id=safety_event_id,

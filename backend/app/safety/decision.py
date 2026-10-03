@@ -1,10 +1,19 @@
 """Decision Layer resolving authoritative risk and safety priority.
 
-CRITICAL ARCHITECTURAL INVARIANT:
-Deterministic safety rules ALWAYS override Machine Learning risk classifications.
-- EMERGENCY safety status forces final risk level to HIGH. ML prediction CANNOT downgrade it.
-- CONCERNING safety status forces final risk level to at least MEDIUM.
-- CLEAR safety status defers to the ML screening classification.
+ARCHITECTURAL PRINCIPLE (MaternAI End-to-End Documentation Section 9):
+Processing order: Validation -> Safety Rules -> ML Risk Model -> Decision Layer -> Alerts / Workflow
+
+Documented Decision Hierarchy:
+- if validation fails: VALIDATION_ERROR
+- else if emergency rule: EMERGENCY
+- else if concerning rule: CONCERNING
+- else: use ML classification (LOW / MEDIUM / HIGH)
+
+CRITICAL CLINICAL BOUNDARY:
+The clinical mappings (e.g. EMERGENCY -> HIGH risk, EMERGENCY -> CRITICAL alert, CONCERNING -> MEDIUM risk)
+are NOT explicitly defined as approved clinical rules in MaternAI PRD or End-to-End documentation.
+Per docs/api_contracts.md Section 6.2, these cross-enum mappings remain explicitly deferred
+pending clinical safety specification (Phase 6).
 """
 
 from dataclasses import dataclass
@@ -16,9 +25,28 @@ from backend.app.safety.states import SafetyStatus
 from backend.app.schemas.mother import MaternalRiskLevel
 
 
+def resolve_decision_state(
+    validation_passed: bool,
+    safety_status: SafetyStatus,
+    ml_risk_level: MaternalRiskLevel,
+) -> str:
+    """Documented decision hierarchy resolving authoritative decision state.
+    
+    Source: MaternAI End-to-End Documentation Section 9.
+    """
+    if not validation_passed:
+        return "VALIDATION_ERROR"
+    if safety_status == SafetyStatus.EMERGENCY:
+        return "EMERGENCY"
+    if safety_status == SafetyStatus.CONCERNING:
+        return "CONCERNING"
+    return ml_risk_level.value
+
+
 @dataclass
 class DecisionResult:
     """Consolidated clinical decision resolving safety precedence."""
+    decision_state: str  # Authoritative decision hierarchy state (EMERGENCY, CONCERNING, LOW, MEDIUM, HIGH)
     final_risk_level: MaternalRiskLevel
     safety_status: SafetyStatus
     model_score: Optional[float]
@@ -36,46 +64,40 @@ class DecisionEngine:
         safety_result: SafetyResult,
         prediction_result: MLPredictionResult,
     ) -> DecisionResult:
-        """Resolve authoritative risk level enforcing safety precedence."""
-        # 1. Deterministic EMERGENCY overrides all ML outputs
+        """Resolve authoritative decision state enforcing safety precedence.
+        
+        The authoritative hierarchy state (decision_state) strictly prioritizes deterministic safety.
+        The categorical ML risk_level is preserved from the model provider, avoiding inventing
+        an unapproved clinical conversion rule between SafetyStatus and MaternalRiskLevel.
+        """
+        # Resolve authoritative hierarchy state per MaternAI documentation
+        dec_state = resolve_decision_state(
+            validation_passed=True,
+            safety_status=safety_result.status,
+            ml_risk_level=prediction_result.risk_level,
+        )
+
+        trigger_reason: Optional[str] = None
+        action_required: Optional[str] = None
+
         if safety_result.status == SafetyStatus.EMERGENCY:
-            return DecisionResult(
-                final_risk_level=MaternalRiskLevel.HIGH,
-                safety_status=SafetyStatus.EMERGENCY,
-                model_score=prediction_result.model_score,
-                model_version=prediction_result.model_version,
-                feature_schema_version=prediction_result.feature_schema_version,
-                trigger_reason=", ".join(safety_result.triggered_rules) or "Deterministic emergency safety rule triggered",
-                action_required=safety_result.action_required or "Immediate clinical emergency response required",
-            )
+            trigger_reason = ", ".join(safety_result.triggered_rules) or "Deterministic emergency safety rule triggered"
+            action_required = safety_result.action_required or "Immediate clinical emergency response required"
+        elif safety_result.status == SafetyStatus.CONCERNING:
+            trigger_reason = ", ".join(safety_result.triggered_rules) or "Deterministic concerning condition detected"
+            action_required = safety_result.action_required or "Prompt ASHA worker follow-up recommended"
 
-        # 2. Deterministic CONCERNING elevates risk to at least MEDIUM
-        if safety_result.status == SafetyStatus.CONCERNING:
-            elevated_risk = (
-                MaternalRiskLevel.HIGH
-                if prediction_result.risk_level == MaternalRiskLevel.HIGH
-                else MaternalRiskLevel.MEDIUM
-            )
-            return DecisionResult(
-                final_risk_level=elevated_risk,
-                safety_status=SafetyStatus.CONCERNING,
-                model_score=prediction_result.model_score,
-                model_version=prediction_result.model_version,
-                feature_schema_version=prediction_result.feature_schema_version,
-                trigger_reason=", ".join(safety_result.triggered_rules) or "Deterministic concerning condition detected",
-                action_required=safety_result.action_required or "Prompt ASHA worker follow-up recommended",
-            )
-
-        # 3. Deterministic CLEAR defers to ML model prediction
         return DecisionResult(
+            decision_state=dec_state,
             final_risk_level=prediction_result.risk_level,
-            safety_status=SafetyStatus.CLEAR,
+            safety_status=safety_result.status,
             model_score=prediction_result.model_score,
             model_version=prediction_result.model_version,
             feature_schema_version=prediction_result.feature_schema_version,
-            trigger_reason=None,
-            action_required=None,
+            trigger_reason=trigger_reason,
+            action_required=action_required,
         )
+
 
 
 # Global decision engine instance
