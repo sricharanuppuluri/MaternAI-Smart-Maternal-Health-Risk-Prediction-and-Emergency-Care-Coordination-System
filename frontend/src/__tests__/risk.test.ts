@@ -59,7 +59,7 @@ describe('Phase 5 — ML Pipeline & Risk UI Verification Tests', () => {
 
     expect(renderedJson).toContain('LOW RISK');
     expect(renderedJson).toContain('"variant":"success"');
-    expect(renderedJson).toContain('Standard prenatal monitoring trajectory');
+    expect(renderedJson).toContain('LOW RISK — Screening result');
   });
 
   it('2. renders MEDIUM risk tier correctly with warning variant', () => {
@@ -79,7 +79,7 @@ describe('Phase 5 — ML Pipeline & Risk UI Verification Tests', () => {
 
     expect(renderedJson).toContain('MEDIUM RISK');
     expect(renderedJson).toContain('"variant":"warning"');
-    expect(renderedJson).toContain('Elevated monitoring recommended by ASHA care team');
+    expect(renderedJson).toContain('MEDIUM RISK — Screening result');
   });
 
   it('3. renders HIGH risk tier correctly with danger variant', () => {
@@ -99,7 +99,7 @@ describe('Phase 5 — ML Pipeline & Risk UI Verification Tests', () => {
 
     expect(renderedJson).toContain('HIGH RISK');
     expect(renderedJson).toContain('"variant":"danger"');
-    expect(renderedJson).toContain('Requires prompt clinical review and ASHA follow-up');
+    expect(renderedJson).toContain('HIGH RISK — Screening result');
   });
 
   // ----------------------------------------------------------------------------

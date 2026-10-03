@@ -119,10 +119,9 @@ export const RiskTimelinePage: React.FC = () => {
                     className="text-sm font-bold"
                   />
                   <span className="text-sm text-muted">
-                    {timeline?.current_risk_level === 'HIGH' && 'Under high-priority care coordination'}
-                    {timeline?.current_risk_level === 'MEDIUM' && 'Under active community health monitoring'}
-                    {timeline?.current_risk_level === 'LOW' && 'Tracking standard baseline wellness'}
-                    {!timeline?.current_risk_level && 'No baseline risk screening completed yet'}
+                    {timeline?.current_risk_level
+                      ? `${timeline.current_risk_level} RISK — Screening result`
+                      : 'No baseline risk screening completed yet'}
                   </span>
                 </div>
               </div>

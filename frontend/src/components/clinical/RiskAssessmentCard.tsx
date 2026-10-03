@@ -116,9 +116,7 @@ export const RiskAssessmentCard: React.FC<RiskAssessmentCardProps> = ({
               className="risk-tier-badge text-sm font-bold"
             />
             <span className="text-sm font-medium text-muted">
-              {prediction.risk_level === 'HIGH' && 'Requires prompt clinical review and ASHA follow-up'}
-              {prediction.risk_level === 'MEDIUM' && 'Elevated monitoring recommended by ASHA care team'}
-              {prediction.risk_level === 'LOW' && 'Standard prenatal monitoring trajectory'}
+              {`${prediction.risk_level} RISK — Screening result`}
             </span>
           </div>
         </div>
