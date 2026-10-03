@@ -412,13 +412,15 @@ The following matrix documents the database Row Level Security (RLS) and backend
 - These boundaries are **data integrity filters**, not diagnostic criteria or clinical decision thresholds.
 
 ### 6.4 Production Authentication Boundary & Cryptographic Verification Status
-- **Fail-Closed Production Boundary**: In Phase 2, production authentication validates RFC 7519 3-segment JWT structure. However, because live Supabase JWKS / cryptographic secret verification is scheduled for Phase 3 infrastructure deployment, **the production dependency intentionally fails closed**:
-  - Missing token -> `401 Unauthorized`
-  - Malformed or arbitrary string token -> `401 Unauthorized`
-  - Structurally valid (3-segment) but unverified token -> **`401 Unauthorized`** (never authenticated)
-  - Forged token claiming ADMIN or other role -> **`401 Unauthorized`**
+- **Cryptographic Verification (IMPLEMENTED - Phase 4)**: Production authentication uses PyJWT to cryptographically verify Supabase Auth access tokens:
+  - Missing token or non-Bearer scheme -> `401 Unauthorized`
+  - Malformed or non-3-part token -> `401 Unauthorized`
+  - Unsigned or invalid signature -> `401 Unauthorized`
+  - Expired token (`exp` claim) -> `401 Unauthorized`
+  - Unconfigured JWT verification secret -> fails closed with `401 Unauthorized`
+- **Authoritative Identity & Role Resolution**: Authenticated user identity is extracted from `sub`. The user's application role is resolved strictly from the authoritative database `profiles` table. Client claims, request body role fields, and arbitrary JWT `user_metadata.role` claims are **never trusted** for authorization. Fresh signups without an existing database profile default strictly to the unprivileged `MOTHER` role.
+- **Profile Role Integrity (`POST /api/v1/auth/profile`)**: Prohibits non-admin users from self-promoting to `ASHA` or `ADMIN`, and disallows mutation of existing user roles without administrative authorization.
 - **Test Authentication Isolation**: Deterministic test identities (`mother_client`, `asha_client`, `admin_client`) bypass the production verification boundary strictly via explicit FastAPI `app.dependency_overrides` in testing fixtures (`backend/tests/conftest.py`). The production dependency contains zero test-token parsing logic.
-- **Authoritative Identity Resolution**: In Phase 3, once cryptographic signature verification is active, the authenticated user ID (`sub`) will query `profiles.role` in the database. The database profile role remains authoritative; client claims in the JWT payload are never trusted for authorization.
 
 ### 6.5 Row Level Security (RLS) Verification Status
 - **Static Migration & Policy Analysis**: **PASSED**. All 17 entities, explicit `search_path = public, auth` on security definer functions, anti-escalation triggers (`trg_prevent_role_escalation`, `trg_prevent_mother_authoritative_update`), and audit log immutability are verified via static regex and AST analysis (`backend/tests/security/test_database_rls_contracts.py`).
