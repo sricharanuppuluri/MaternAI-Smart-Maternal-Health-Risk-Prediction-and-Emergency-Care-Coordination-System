@@ -410,6 +410,15 @@ The following matrix documents the database Row Level Security (RLS) and backend
 - Pydantic fields in `HealthRecordCreate` specify technical boundary constraints for input sanitization (e.g., `systolic_bp` between 50 and 250 mmHg, `pregnancy_week` between 1 and 45).
 - These boundaries are **data integrity filters**, not diagnostic criteria or clinical decision thresholds.
 
-### 6.4 Environment Boundaries for Security Testing
-- **Local Application Test Suite (`pytest`)**: Validates Pydantic schema validation, 401/403 API contract semantics, role boundary checks, anti-escalation logic invariants, and SQL migration syntax.
-- **Live Supabase PostgreSQL Instance**: Execution of live Row Level Security policies and database triggers requires a running Supabase PostgreSQL connection (`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`), scheduled for Phase 3 integration testing.
+### 6.4 Production Authentication Boundary & Cryptographic Verification Status
+- **Fail-Closed Production Boundary**: In Phase 2, production authentication validates RFC 7519 3-segment JWT structure. However, because live Supabase JWKS / cryptographic secret verification is scheduled for Phase 3 infrastructure deployment, **the production dependency intentionally fails closed**:
+  - Missing token -> `401 Unauthorized`
+  - Malformed or arbitrary string token -> `401 Unauthorized`
+  - Structurally valid (3-segment) but unverified token -> **`401 Unauthorized`** (never authenticated)
+  - Forged token claiming ADMIN or other role -> **`401 Unauthorized`**
+- **Test Authentication Isolation**: Deterministic test identities (`mother_client`, `asha_client`, `admin_client`) bypass the production verification boundary strictly via explicit FastAPI `app.dependency_overrides` in testing fixtures (`backend/tests/conftest.py`). The production dependency contains zero test-token parsing logic.
+- **Authoritative Identity Resolution**: In Phase 3, once cryptographic signature verification is active, the authenticated user ID (`sub`) will query `profiles.role` in the database. The database profile role remains authoritative; client claims in the JWT payload are never trusted for authorization.
+
+### 6.5 Row Level Security (RLS) Verification Status
+- **Static Migration & Policy Analysis**: **PASSED**. All 17 entities, explicit `search_path = public, auth` on security definer functions, anti-escalation triggers (`trg_prevent_role_escalation`, `trg_prevent_mother_authoritative_update`), and audit log immutability are verified via static regex and AST analysis (`backend/tests/security/test_database_rls_contracts.py`).
+- **Runtime PostgreSQL / Supabase RLS Execution**: **BLOCKED / DEFERRED**. Live execution of SQL role-switching and RLS queries against an active database could not be executed locally because neither Docker, the Supabase CLI, nor local PostgreSQL (`psql`) are installed on the local host machine. A dedicated live integration test runner (`backend/tests/integration/test_supabase_rls_live.py`) detects environment availability and cleanly defers execution until a running PostgreSQL / Supabase instance is provided.

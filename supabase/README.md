@@ -49,5 +49,6 @@ All 17 tables enforce Row Level Security (`ALTER TABLE ... ENABLE ROW LEVEL SECU
 
 ## Verification & Testing Boundaries
 
-- **Static Analysis & Contract Testing**: Executable via `pytest backend/tests/security/` (verifies SQL migration AST/regex invariants, search path definitions, trigger logic, and API dependency boundaries).
-- **Live Supabase Integration Testing**: Requires a running Supabase local container (`supabase start`) or remote PostgreSQL instance applying `20261003000001_initial_schema.sql` and issuing role-scoped SQL queries (`SET ROLE authenticated`, `SET request.jwt.claim.sub = '...'`). Live DB testing is required prior to production deployment.
+- **Static Analysis & Contract Testing (PASSED)**: Executable via `pytest backend/tests/security/` (verifies SQL migration AST/regex invariants across all 17 tables, explicit `search_path = public, auth`, anti-escalation triggers, and audit log immutability).
+- **Live Supabase Integration Testing (BLOCKED / DEFERRED)**: Runtime PostgreSQL execution of RLS policies and triggers requires an active Supabase container or PostgreSQL instance. Because neither Docker, the Supabase CLI, nor local PostgreSQL (`psql`) are installed on the local Windows environment, live runtime execution is gracefully detected and skipped via `backend/tests/integration/test_supabase_rls_live.py`. Live DB integration testing is deferred until containerized infrastructure is provisioned in Phase 3.
+
