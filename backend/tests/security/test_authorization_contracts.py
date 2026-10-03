@@ -122,13 +122,14 @@ def test_mother_cannot_schedule_asha_visit(mother_client: TestClient):
 
 
 def test_asha_permitted_for_asha_endpoints(asha_client: TestClient):
-    """ASHA role calling ASHA endpoint passes role check (returns 501 contract stub, not 401/403)."""
+    """ASHA role calling ASHA endpoint passes role check (does not return 401/403)."""
     alert_id = uuid4()
     payload = {"status": "ACKNOWLEDGED", "notes": "ASHA acknowledged"}
     response = asha_client.patch(f"/api/v1/alerts/{alert_id}/status", json=payload)
-    # Passed authentication and authorization check; reached contract stub
-    assert response.status_code == 501
-    assert response.json()["error"]["code"] == "NOT_IMPLEMENTED"
+    # Passed authentication and authorization check; reached implementation (returns 404 for non-existent alert)
+    assert response.status_code not in (401, 403)
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "NOT_FOUND"
 
 
 # ------------------------------------------------------------------------------
