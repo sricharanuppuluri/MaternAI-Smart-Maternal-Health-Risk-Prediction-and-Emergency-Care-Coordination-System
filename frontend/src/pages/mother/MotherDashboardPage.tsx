@@ -97,9 +97,7 @@ export const MotherDashboardPage: React.FC = () => {
               <span className="status-label text-sm text-muted">Status Notice:</span>
               <span className="status-value text-xs font-medium text-muted">
                 {currentRisk ? (
-                  currentRisk === 'HIGH' ? 'Requires urgent medical / ASHA consultation' :
-                  currentRisk === 'MEDIUM' ? 'Requires routine ASHA monitoring' :
-                  'Normal baseline monitoring'
+                  `${currentRisk} RISK — Screening result`
                 ) : (
                   'No risk assessment available yet.'
                 )}
@@ -107,8 +105,8 @@ export const MotherDashboardPage: React.FC = () => {
             </div>
 
             <div className="status-item flex items-center justify-between">
-              <span className="status-label text-sm text-muted">Assigned Caregiver:</span>
-              <strong className="status-value text-xs">Anita Devi (ASHA Health Worker)</strong>
+              <span className="status-label text-sm text-muted">Assigned ASHA:</span>
+              <span className="status-value text-xs text-muted">Available through care coordination</span>
             </div>
           </div>
 
