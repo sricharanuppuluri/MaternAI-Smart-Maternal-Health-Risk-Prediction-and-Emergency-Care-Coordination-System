@@ -5,6 +5,7 @@ Endpoints scheduled for subsequent phases are explicitly marked with 501 Not Imp
 while fully exposing their Pydantic request/response schemas in the OpenAPI specification.
 """
 
+from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
@@ -15,7 +16,8 @@ from backend.app.auth.dependencies import (
     require_mother,
 )
 from backend.app.core.config import Settings, get_settings
-from backend.app.core.errors import AppError
+from backend.app.core.errors import ForbiddenError
+from backend.app.db.repositories import get_repository
 from backend.app.schemas.alert import AlertResponse, AlertStatusUpdate
 from backend.app.schemas.auth import AuthUser, ProfileCreate, ProfileResponse, UserRole
 from backend.app.schemas.common import PaginatedResponse
@@ -27,6 +29,9 @@ from backend.app.schemas.prediction import PredictionRequest, PredictionResponse
 from backend.app.schemas.symptom import SymptomResponse, SymptomSubmission
 from backend.app.schemas.timeline import RiskTimelineResponse
 from backend.app.schemas.visit import VisitCreate, VisitResponse
+from backend.app.services.coordination_service import coordination_service
+from backend.app.services.health_service import health_record_service, symptom_service
+from backend.app.services.prediction_service import prediction_service
 
 api_router = APIRouter()
 
@@ -51,7 +56,7 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthStat
 
 
 # ------------------------------------------------------------------------------
-# 2. Auth & Profile Bootstrapping [CONTRACT FROZEN]
+# 2. Auth & Profile Bootstrapping [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/auth/profile",
@@ -64,16 +69,42 @@ async def bootstrap_profile(
     payload: ProfileCreate,
     current_user: AuthUser = Depends(get_current_user),
 ) -> ProfileResponse:
-    """Contract stub for profile creation."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 3 (Authentication). Contract is frozen.",
+    """Bootstrap user profile enforcing role authorization."""
+    if payload.role == UserRole.ADMIN and current_user.role != UserRole.ADMIN:
+        raise ForbiddenError(message="Unauthorized: Regular users cannot bootstrap with ADMIN role.")
+
+    repo = get_repository()
+    now = datetime.now(timezone.utc)
+    profile_data = {
+        "id": current_user.id,
+        "role": payload.role,
+        "full_name": payload.full_name,
+        "phone": payload.phone,
+        "created_at": now,
+        "updated_at": now,
+    }
+    repo.profiles[current_user.id] = profile_data
+    if payload.role == UserRole.MOTHER:
+        repo.resolve_mother_id(current_user.id)
+    repo.log_audit(
+        user_id=current_user.id,
+        action="BOOTSTRAP_PROFILE",
+        resource_type="profiles",
+        resource_id=current_user.id,
+        details={"role": payload.role.value},
+    )
+    return ProfileResponse(
+        id=current_user.id,
+        role=payload.role,
+        full_name=payload.full_name,
+        phone=payload.phone,
+        created_at=now,
+        updated_at=now,
     )
 
 
 # ------------------------------------------------------------------------------
-# 3. Mother Profile [CONTRACT FROZEN]
+# 3. Mother Profile [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.get(
     "/mothers/me",
@@ -84,38 +115,45 @@ async def bootstrap_profile(
 async def get_current_mother(
     current_user: AuthUser = Depends(require_mother),
 ) -> MotherProfileResponse:
-    """Contract stub for fetching current mother profile."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 3/4. Contract is frozen.",
+    """Return profile information for the currently authenticated mother."""
+    repo = get_repository()
+    mother_id = repo.resolve_mother_id(current_user.id)
+    profile = repo.mother_profiles.get(mother_id, {})
+    return MotherProfileResponse(
+        id=mother_id,
+        user_id=current_user.id,
+        full_name=profile.get("full_name", current_user.full_name or "Mother"),
+        date_of_birth=profile.get("date_of_birth"),
+        age_years=profile.get("age_years"),
+        gestational_age_weeks=profile.get("gestational_age_weeks"),
+        expected_due_date=profile.get("expected_due_date"),
+        assigned_asha_id=profile.get("assigned_asha_id"),
+        last_risk_level=profile.get("last_risk_level"),
+        phone=profile.get("phone"),
+        created_at=profile.get("created_at", datetime.now(timezone.utc)),
     )
 
 
 # ------------------------------------------------------------------------------
-# 4. Health Records [CONTRACT FROZEN]
+# 4. Health Records [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/health-records",
     response_model=HealthRecordResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Record Maternal Health Measurements",
-    description="Accepts vital measurements and stores a new health record.",
+    description="Accepts vital measurements, evaluates safety boundary, and stores a new health record.",
 )
 async def create_health_record(
     payload: HealthRecordCreate,
     current_user: AuthUser = Depends(require_mother),
 ) -> HealthRecordResponse:
-    """Contract stub for creating health records."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Health API). Contract is frozen.",
-    )
+    """Create and persist new maternal vital sign measurements."""
+    return health_record_service.create_health_record(payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 5. Symptoms [CONTRACT FROZEN]
+# 5. Symptoms [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/symptoms",
@@ -128,38 +166,30 @@ async def record_symptoms(
     payload: SymptomSubmission,
     current_user: AuthUser = Depends(require_mother),
 ) -> List[SymptomResponse]:
-    """Contract stub for recording symptoms."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Health API). Contract is frozen.",
-    )
+    """Record and persist maternal symptoms."""
+    return symptom_service.record_symptoms(payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 6. ML Predictions [CONTRACT FROZEN]
+# 6. ML Predictions [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/predictions",
     response_model=PredictionResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Evaluate Maternal Risk Screening",
-    description="Evaluates vital and symptom inputs against the ML risk model and decision layer.",
+    description="Evaluates vital and symptom inputs through deterministic safety engine and ML risk model.",
 )
 async def create_prediction(
     payload: PredictionRequest,
     current_user: AuthUser = Depends(require_mother),
 ) -> PredictionResponse:
-    """Contract stub for ML risk prediction."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 5 (ML Pipeline). Contract is frozen.",
-    )
+    """Evaluate maternal risk screening enforcing deterministic safety precedence."""
+    return prediction_service.evaluate_risk(payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 7. Alerts Queue [CONTRACT FROZEN]
+# 7. Alerts Queue [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.get(
     "/alerts",
@@ -172,35 +202,27 @@ async def list_alerts(
     size: int = Query(20, ge=1, le=100, description="Items per page"),
     current_user: AuthUser = Depends(get_current_user),
 ) -> PaginatedResponse[AlertResponse]:
-    """Contract stub for listing alerts."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Alerts API). Contract is frozen.",
-    )
+    """List alerts filtered by role and assignment scope."""
+    return coordination_service.list_alerts(current_user, page=page, size=size)
 
 
 @api_router.patch(
     "/alerts/{alert_id}/status",
     response_model=AlertResponse,
     summary="Update Alert Status",
-    description="Updates workflow status of an alert (ASHA only).",
+    description="Updates workflow status of an alert (ASHA assigned or Admin only).",
 )
 async def update_alert_status(
     alert_id: UUID,
     payload: AlertStatusUpdate,
     current_user: AuthUser = Depends(require_asha),
 ) -> AlertResponse:
-    """Contract stub for updating alert status."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Alerts API). Contract is frozen.",
-    )
+    """Update workflow status of an alert."""
+    return coordination_service.update_alert_status(alert_id, payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 8. Visits [CONTRACT FROZEN]
+# 8. Visits [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/visits",
@@ -213,16 +235,12 @@ async def create_visit(
     payload: VisitCreate,
     current_user: AuthUser = Depends(require_asha),
 ) -> VisitResponse:
-    """Contract stub for creating a visit."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Visits API). Contract is frozen.",
-    )
+    """Record an in-person or home visit performed by an assigned ASHA."""
+    return coordination_service.create_visit(payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 9. Follow-ups [CONTRACT FROZEN]
+# 9. Follow-ups [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.post(
     "/followups",
@@ -235,16 +253,12 @@ async def create_followup(
     payload: FollowUpCreate,
     current_user: AuthUser = Depends(require_asha),
 ) -> FollowUpResponse:
-    """Contract stub for creating a follow-up."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4 (Follow-ups API). Contract is frozen.",
-    )
+    """Schedule a follow-up action for an assigned mother."""
+    return coordination_service.create_followup(payload, current_user)
 
 
 # ------------------------------------------------------------------------------
-# 10. Risk Timeline [CONTRACT FROZEN]
+# 10. Risk Timeline [IMPLEMENTED]
 # ------------------------------------------------------------------------------
 @api_router.get(
     "/mothers/{mother_id}/risk-timeline",
@@ -256,9 +270,6 @@ async def get_risk_timeline(
     mother_id: UUID,
     current_user: AuthUser = Depends(get_current_user),
 ) -> RiskTimelineResponse:
-    """Contract stub for fetching risk timeline."""
-    raise AppError(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        code="NOT_IMPLEMENTED",
-        message="Endpoint implementation scheduled for Phase 4/5. Contract is frozen.",
-    )
+    """Return longitudinal risk timeline enforcing patient isolation and ASHA assignment boundaries."""
+    return coordination_service.get_risk_timeline(mother_id, current_user)
+
