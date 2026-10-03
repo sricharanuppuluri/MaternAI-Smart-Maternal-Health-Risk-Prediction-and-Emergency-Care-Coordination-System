@@ -54,6 +54,46 @@ def test_invalid_jwt_format_returns_401(client: TestClient):
     assert data["error"]["code"] == "UNAUTHORIZED"
 
 
+def test_structurally_valid_unverified_jwt_returns_401(client: TestClient):
+    """A structurally valid 3-part JWT that is not cryptographically verified must be rejected with 401."""
+    # Header: {"alg": "HS256", "typ": "JWT"}, Payload: {"sub": "12345", "role": "MOTHER"}
+    token = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiIxMjM0NSIsInJvbGUiOiJNT1RIRVIiLCJleHAiOjE5OTk5OTk5OTl9."
+        "unverified_signature_bytes_here"
+    )
+    response = client.get("/api/v1/mothers/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "UNAUTHORIZED"
+    assert "unverified" in data["error"]["message"].lower() or "required" in data["error"]["message"].lower()
+
+
+def test_forged_admin_claim_jwt_returns_401(client: TestClient):
+    """A forged JWT claiming ADMIN role must NOT authenticate or grant access (fails closed at 401)."""
+    # Header: {"alg": "HS256", "typ": "JWT"}, Payload: {"sub": "forged-id", "role": "ADMIN"}
+    token = (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiJmb3JnZWQtaWQiLCJyb2xlIjoiQURNSU4iLCJleHAiOjE5OTk5OTk5OTl9."
+        "forged_admin_signature_attempt"
+    )
+    response = client.get("/api/v1/mothers/me", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "UNAUTHORIZED"
+
+
+def test_production_auth_rejects_test_fixture_tokens(client: TestClient):
+    """Calling production endpoint with legacy test-style token string must return 401."""
+    response = client.get(
+        "/api/v1/mothers/me",
+        headers={"Authorization": "Bearer test-mother-1234"},
+    )
+    assert response.status_code == 401
+    data = response.json()
+    assert data["error"]["code"] == "UNAUTHORIZED"
+
+
 # ------------------------------------------------------------------------------
 # 2. 403 Forbidden API Semantics (Role Boundary Checks)
 # ------------------------------------------------------------------------------

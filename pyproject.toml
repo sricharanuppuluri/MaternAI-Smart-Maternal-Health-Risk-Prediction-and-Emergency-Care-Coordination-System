@@ -4,3 +4,6 @@ pythonpath = ["."]
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+markers = [
+    "integration: live database integration tests requiring running PostgreSQL/Supabase instance",
+]

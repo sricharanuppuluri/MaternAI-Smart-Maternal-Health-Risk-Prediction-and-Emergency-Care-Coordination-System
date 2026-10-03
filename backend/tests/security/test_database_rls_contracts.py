@@ -79,3 +79,58 @@ def test_audit_logs_immutability_in_migration():
     # Verify no UPDATE policy for audit_logs
     assert not re.search(r"CREATE\s+POLICY\s+audit_logs_update", content, re.IGNORECASE)
     assert not re.search(r"CREATE\s+POLICY\s+audit_logs_delete", content, re.IGNORECASE)
+
+
+# ------------------------------------------------------------------------------
+# RLS Scenarios Static Analysis & Policy Invariant Tests (Part 2)
+# ------------------------------------------------------------------------------
+def test_scenario_1_mother_isolation_policy():
+    """Scenario 1: Mother isolation - policies strictly enforce auth.uid() scoping."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    # Mother profiles SELECT must be restricted to user_id = auth.uid() or assigned ASHA/Admin
+    assert re.search(r"user_id\s*=\s*auth\.uid\(\)", content)
+    # Health records SELECT must be restricted to mother_id scoping or assigned ASHA/Admin
+    assert re.search(r"mother_id\s*IN\s*\(SELECT\s+id\s+FROM\s+public\.mother_profiles\s+WHERE\s+user_id\s*=\s*auth\.uid\(\)\)", content)
+
+
+def test_scenario_2_and_3_asha_assignment_and_isolation():
+    """Scenarios 2 & 3: Assigned ASHA allowed, unassigned ASHA denied via is_assigned_asha()."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    # Must use is_assigned_asha(mother_id) or is_assigned_asha(id)
+    assert re.search(r"public\.is_assigned_asha\(\s*(?:mother_id|id)\s*\)", content)
+
+
+def test_scenario_4_role_escalation_trigger_logic():
+    """Scenario 4: Role escalation blocked by check_profile_role_update trigger function."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    # Must check NEW.role != OLD.role and current_user_role() != 'ADMIN'
+    assert "NEW.role IS DISTINCT FROM OLD.role" in content
+    assert "public.current_user_role() != 'ADMIN'" in content
+    assert "Unauthorized: Direct modification of user role is prohibited" in content
+
+
+def test_scenario_5_and_6_mother_authoritative_fields_protection():
+    """Scenarios 5 & 6: ASHA reassignment and risk level modification blocked by trigger."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    assert "NEW.assigned_asha_id IS DISTINCT FROM OLD.assigned_asha_id" in content
+    assert "NEW.last_risk_level IS DISTINCT FROM OLD.last_risk_level" in content
+    assert "Unauthorized: Mothers cannot reassign their assigned ASHA" in content
+    assert "Unauthorized: last_risk_level is server-controlled" in content
+
+
+def test_scenario_7_and_8_server_controlled_predictions_and_safety_events():
+    """Scenarios 7 & 8: Predictions and safety_events insert policies restricted to ADMIN/service."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    # Predictions insert policy must restrict to ADMIN
+    assert re.search(r"CREATE\s+POLICY\s+predictions_insert.*?WITH\s+CHECK\s*\(\s*public\.current_user_role\(\)\s*=\s*'ADMIN'\s*\);", content, re.DOTALL)
+    # Safety events insert policy must restrict to ADMIN
+    assert re.search(r"CREATE\s+POLICY\s+safety_events_insert.*?WITH\s+CHECK\s*\(\s*public\.current_user_role\(\)\s*=\s*'ADMIN'\s*\);", content, re.DOTALL)
+
+
+def test_scenario_10_unauthenticated_access_denied():
+    """Scenario 10: Unauthenticated access denied by requiring auth.uid() or current_user_role()."""
+    content = MIGRATION_FILE.read_text(encoding="utf-8")
+    # Helper functions check id = auth.uid() or auth.uid() IS NOT NULL
+    assert "auth.uid()" in content
+    assert "WHERE id = auth.uid()" in content
+
