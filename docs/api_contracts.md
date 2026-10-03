@@ -110,16 +110,17 @@ List endpoints requiring pagination use `page` and `size` query parameters:
 |---|---|---|---|---|
 | `GET` | `/` | Public | **IMPLEMENTED** | Root application health check |
 | `GET` | `/api/v1/health` | Public | **IMPLEMENTED** | API v1 service health status |
-| `POST` | `/api/v1/auth/profile` | Authenticated | **CONTRACT FROZEN** | Profile onboarding & role bootstrapping |
-| `GET` | `/api/v1/mothers/me` | `MOTHER`, `ADMIN` | **CONTRACT FROZEN** | Fetch current mother's profile |
-| `POST` | `/api/v1/health-records` | `MOTHER`, `ADMIN` | **CONTRACT FROZEN** | Record maternal vital signs |
-| `POST` | `/api/v1/symptoms` | `MOTHER`, `ADMIN` | **CONTRACT FROZEN** | Submit structured maternal symptoms |
-| `POST` | `/api/v1/predictions` | `MOTHER`, `ADMIN` | **CONTRACT FROZEN** | Trigger ML risk screening |
-| `GET` | `/api/v1/alerts` | Authenticated | **CONTRACT FROZEN** | Paginated alerts queue |
-| `PATCH` | `/api/v1/alerts/{id}/status` | `ASHA`, `ADMIN` | **CONTRACT FROZEN** | Update alert workflow status |
-| `POST` | `/api/v1/visits` | `ASHA`, `ADMIN` | **CONTRACT FROZEN** | Record/schedule ASHA visit |
-| `POST` | `/api/v1/followups` | `ASHA`, `ADMIN` | **CONTRACT FROZEN** | Schedule ASHA follow-up task |
-| `GET` | `/api/v1/mothers/{id}/risk-timeline` | Authenticated | **CONTRACT FROZEN** | Longitudinal risk & vitals timeline |
+| `POST` | `/api/v1/auth/profile` | Authenticated | **IMPLEMENTED** (Phase 3) | Profile onboarding & role bootstrapping |
+| `GET` | `/api/v1/mothers/me` | `MOTHER`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Fetch current mother's profile |
+| `POST` | `/api/v1/health-records` | `MOTHER`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Record maternal vital signs |
+| `POST` | `/api/v1/symptoms` | `MOTHER`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Submit structured maternal symptoms |
+| `POST` | `/api/v1/predictions` | `MOTHER`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Trigger ML risk screening & deterministic safety |
+| `GET` | `/api/v1/alerts` | Authenticated | **IMPLEMENTED** (Phase 3) | Paginated alerts queue |
+| `PATCH` | `/api/v1/alerts/{id}/status` | `ASHA`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Update alert workflow status |
+| `POST` | `/api/v1/visits` | `ASHA`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Record/schedule ASHA visit |
+| `POST` | `/api/v1/followups` | `ASHA`, `ADMIN` | **IMPLEMENTED** (Phase 3) | Schedule ASHA follow-up task |
+| `GET` | `/api/v1/mothers/{id}/risk-timeline` | Authenticated | **IMPLEMENTED** (Phase 3) | Longitudinal risk & vitals timeline |
+
 
 ---
 
