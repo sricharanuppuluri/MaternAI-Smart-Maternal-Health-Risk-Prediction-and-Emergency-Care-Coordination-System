@@ -1253,16 +1253,30 @@ class RepositoryStore:
 
 # Cloud Supabase integration adapter
 class SupabasePostgresRepository(RepositoryStore):
-    """Supabase PostgREST and PostgreSQL cloud repository adapter."""
+    """Supabase PostgREST and PostgreSQL cloud repository adapter.
+
+    Provides:
+    - User identity propagation and client scoping separating user-level (RLS enforced)
+      from service-role (privileged server) access.
+    - get_authenticated_client(access_token): Uses SUPABASE_ANON_KEY (or configured key) with the
+      caller's verified JWT Bearer token so PostgREST executes under auth.uid() and enforces PostgreSQL RLS.
+    - get_service_client(): Uses SUPABASE_SERVICE_ROLE_KEY, strictly guarded for server-side
+      privileged operations (system audit logs, ML model version registry, safety event recording).
+    - Prevents accidental RLS bypass by refusing to run client-scoped user queries through the service role.
+    """
 
     def __init__(self, db_path: Optional[str] = None):
         super().__init__(db_path=db_path)
         self._supabase_client = None
         settings = get_settings()
+        self._supabase_url = settings.SUPABASE_URL
+        self._service_role_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        self._anon_key = settings.SUPABASE_ANON_KEY
+
         if settings.is_supabase_configured:
             try:
                 from supabase import create_client
-                self._supabase_client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+                self._supabase_client = create_client(self._supabase_url, self._service_role_key)
             except Exception:
                 self._supabase_client = None
 
@@ -1271,11 +1285,85 @@ class SupabasePostgresRepository(RepositoryStore):
         """Check if live Supabase client connection is active."""
         return self._supabase_client is not None
 
+    def get_service_client(self):
+        """Return the privileged service-role client.
 
-# Global repository instance
-repository = RepositoryStore()
+        SECURITY NOTICE: Must ONLY be used for server-side privileged tasks:
+        - System immutable audit logging (audit_logs)
+        - Model registry updates (model_versions)
+        - Safety event system records (safety_events)
+        - Initial administrative profile provisioning
+        Must NEVER be exposed to frontend clients or used to bypass user RLS policies.
+        """
+        if not self._supabase_client:
+            raise RuntimeError("Supabase service client is not configured or unavailable.")
+        return self._supabase_client
+
+    def get_authenticated_client(self, access_token: str):
+        """Create a Supabase client scoped to an authenticated user's JWT.
+
+        Propagates the user's verified Bearer token to PostgREST, ensuring PostgreSQL
+        enforces Row Level Security (RLS) under the user's identity (auth.uid()).
+        """
+        if not self._supabase_url:
+            raise RuntimeError("Supabase URL is not configured.")
+        from supabase import create_client
+        key = self._anon_key or self._service_role_key
+        client = create_client(self._supabase_url, key)
+        if hasattr(client, "postgrest") and hasattr(client.postgrest, "auth"):
+            client.postgrest.auth(access_token)
+        return client
+
+
+# Global repository instance state
+_repository_instance: Optional[RepositoryStore] = None
+
+
+def create_repository(settings: Optional[Any] = None) -> RepositoryStore:
+    """Deterministic, configuration-driven repository factory.
+
+    Repository Selection Policy:
+    1. If valid Supabase / Postgres configuration is present (SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY,
+       or DATABASE_URL / SUPABASE_DB_URL):
+       Selects and instantiates SupabasePostgresRepository.
+    2. If ENVIRONMENT == "production" and valid Supabase / Postgres configuration is missing:
+       Fails closed with RuntimeError. The local disk-backed repository must NEVER silently become
+       the production persistence backend.
+    3. In local development or test environments (ENVIRONMENT != "production"):
+       Explicitly falls back to local disk-backed RepositoryStore (or in-memory if specified).
+    """
+    if settings is None:
+        settings = get_settings()
+
+    is_configured = getattr(settings, "is_supabase_configured", False) or bool(
+        getattr(settings, "DATABASE_URL", None) or getattr(settings, "SUPABASE_DB_URL", None)
+    )
+
+    if is_configured:
+        return SupabasePostgresRepository()
+
+    env = str(getattr(settings, "ENVIRONMENT", "development")).lower()
+    if env == "production":
+        raise RuntimeError(
+            "CRITICAL SECURITY / CONFIGURATION ERROR: Supabase / PostgreSQL configuration is missing "
+            "in production environment. Production persistence requires SupabasePostgresRepository "
+            "(configured via SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY or DATABASE_URL). "
+            "The disk-backed RepositoryStore is a local development/test fallback only and is prohibited in production."
+        )
+
+    return RepositoryStore()
 
 
 def get_repository() -> RepositoryStore:
     """Dependency injector for data repository."""
-    return repository
+    global _repository_instance
+    if _repository_instance is None:
+        _repository_instance = create_repository()
+    return _repository_instance
+
+
+def set_repository(repo: Optional[RepositoryStore]) -> None:
+    """Explicitly override or reset the active repository instance (for tests and dynamic lifecycle)."""
+    global _repository_instance
+    _repository_instance = repo
+

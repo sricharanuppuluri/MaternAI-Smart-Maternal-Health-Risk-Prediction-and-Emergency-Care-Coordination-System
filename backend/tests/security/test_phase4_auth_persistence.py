@@ -21,14 +21,17 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from backend.app.core.config import get_settings
+from backend.app.core.config import Settings, get_settings
 from backend.app.db.repositories import (
     RepositoryStore,
+    SupabasePostgresRepository,
     TEST_ADMIN_ID,
     TEST_ASHA_ID,
     TEST_MOTHER_B_ID,
     TEST_MOTHER_ID,
+    create_repository,
     get_repository,
+    set_repository,
 )
 from backend.app.main import app
 from backend.app.schemas.alert import AlertResponse, AlertSeverity, AlertStatus
@@ -335,3 +338,105 @@ def test_audit_logs_immutability_and_persistence():
     assert latest["action"] == "TEST_ACTION"
     assert latest["resource_type"] == "test_resource"
     assert latest["details"]["test_key"] == "test_value"
+
+
+# ------------------------------------------------------------------------------
+# 6. Repository Selection & Supabase Client Scoping Tests
+# ------------------------------------------------------------------------------
+
+def test_repository_selection_development_fallback_when_unconfigured():
+    """In development/test environment without Supabase, factory selects disk-backed RepositoryStore."""
+    dev_settings = Settings(ENVIRONMENT="development", SUPABASE_URL=None, SUPABASE_SERVICE_ROLE_KEY=None)
+    repo = create_repository(dev_settings)
+    assert isinstance(repo, RepositoryStore)
+    assert not isinstance(repo, SupabasePostgresRepository)
+
+
+def test_repository_selection_production_fails_closed_when_unconfigured():
+    """In production environment without Supabase, factory fails closed with RuntimeError.
+    
+    Proves that the disk-backed RepositoryStore can NEVER silently become the production backend.
+    """
+    prod_unconfigured = Settings(
+        ENVIRONMENT="production",
+        SUPABASE_URL=None,
+        SUPABASE_SERVICE_ROLE_KEY=None,
+        DATABASE_URL=None,
+        SUPABASE_DB_URL=None,
+    )
+    with pytest.raises(RuntimeError, match="CRITICAL SECURITY / CONFIGURATION ERROR"):
+        create_repository(prod_unconfigured)
+
+
+def test_repository_selection_production_uses_supabase_when_configured():
+    """In production with Supabase configured, factory selects SupabasePostgresRepository."""
+    prod_configured = Settings(
+        ENVIRONMENT="production",
+        SUPABASE_URL="https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="test-service-role-key-for-prod",
+    )
+    repo = create_repository(prod_configured)
+    assert isinstance(repo, SupabasePostgresRepository)
+
+
+def test_repository_selection_development_uses_supabase_when_configured():
+    """In development with Supabase configured, factory selects SupabasePostgresRepository."""
+    dev_configured = Settings(
+        ENVIRONMENT="development",
+        SUPABASE_URL="https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY="test-service-role-key-for-dev",
+    )
+    repo = create_repository(dev_configured)
+    assert isinstance(repo, SupabasePostgresRepository)
+
+
+def test_supabase_repository_service_client_guards():
+    """Service client must fail closed when unconfigured and guard privileged access."""
+    repo = SupabasePostgresRepository(db_path=":memory:")
+    repo._supabase_client = None
+
+    # Service client access fails closed if client is not configured
+    with pytest.raises(RuntimeError, match="Supabase service client is not configured"):
+        repo.get_service_client()
+
+    # Authenticated client creation fails closed if Supabase URL is missing
+    repo._supabase_url = None
+    with pytest.raises(RuntimeError, match="Supabase URL is not configured"):
+        repo.get_authenticated_client("some-user-jwt")
+
+
+def test_supabase_repository_authenticated_client_scoping(monkeypatch):
+    """User-authenticated client creation propagates JWT to enforce PostgreSQL RLS."""
+    test_url = "https://mock-project.supabase.co"
+    test_key = "test-anon-key-12345"
+
+    monkeypatch.setattr(get_settings(), "SUPABASE_URL", test_url)
+    monkeypatch.setattr(get_settings(), "SUPABASE_ANON_KEY", test_key)
+    monkeypatch.setattr(get_settings(), "SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
+
+    repo = SupabasePostgresRepository(db_path=":memory:")
+    assert repo._supabase_url == test_url
+
+    user_token = _create_jwt(sub=TEST_MOTHER_ID)
+    auth_client = repo.get_authenticated_client(user_token)
+
+    assert auth_client is not None
+    # PostgREST client receives the Bearer authorization header
+    if hasattr(auth_client, "postgrest"):
+        assert auth_client.postgrest.headers.get("authorization") == f"Bearer {user_token}"
+
+
+def test_get_repository_singleton_lifecycle():
+    """get_repository returns a consistent instance and respects explicit overrides."""
+    initial_repo = get_repository()
+    assert initial_repo is not None
+
+    test_override = RepositoryStore(db_path=":memory:")
+    set_repository(test_override)
+    assert get_repository() is test_override
+
+    # Reset back to default
+    set_repository(None)
+    restored = get_repository()
+    assert restored is not test_override
+
