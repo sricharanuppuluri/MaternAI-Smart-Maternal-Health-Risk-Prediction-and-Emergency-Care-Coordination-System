@@ -100,11 +100,30 @@ class BaselineScreeningModel(ModelProvider):
         )
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class MLPredictionService:
     """Service facade coordinating model inference."""
 
     def __init__(self, provider: Optional[ModelProvider] = None):
-        self._provider = provider or BaselineScreeningModel()
+        if provider is not None:
+            self._provider = provider
+        else:
+            # Attempt to instantiate production TrainedModelProvider if artifact exists
+            try:
+                from backend.app.ml.trained_provider import TrainedModelProvider
+                trained = TrainedModelProvider()
+                if trained.is_loaded:
+                    self._provider = trained
+                else:
+                    logger.warning("TrainedModelProvider artifact is not loaded. Operating in BaselineScreeningModel mode.")
+                    self._provider = BaselineScreeningModel()
+            except Exception as exc:
+                logger.error("Failed to initialize TrainedModelProvider: %s. Falling back to BaselineScreeningModel.", exc)
+                self._provider = BaselineScreeningModel()
 
     def set_provider(self, provider: ModelProvider):
         """Allow injecting future trained ML model providers."""

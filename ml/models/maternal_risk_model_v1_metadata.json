@@ -1,0 +1,192 @@
+{
+  "model_version": "gradient-boosting-v1.0",
+  "feature_schema_version": "schema-v1",
+  "algorithm": "Gradient Boosting",
+  "training_timestamp": "2026-10-04T06:57:02.070882+00:00",
+  "random_seed": 42,
+  "dataset": {
+    "name": "UCI Maternal Health Risk Data Set (#863)",
+    "doi": "10.24432/C5DP5D",
+    "license": "CC BY 4.0",
+    "raw_samples": 1014,
+    "unambiguous_profiles": 381,
+    "excluded_conflicting_profiles": 35,
+    "train_samples": 266,
+    "val_samples": 57,
+    "test_samples": 58,
+    "test_class_counts": {
+      "LOW": 31,
+      "MEDIUM": 12,
+      "HIGH": 15
+    }
+  },
+  "feature_columns": [
+    "Age",
+    "SystolicBP",
+    "DiastolicBP",
+    "BS",
+    "BodyTemp",
+    "HeartRate"
+  ],
+  "classes": [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ],
+  "feature_importances": {
+    "Age": 0.0968,
+    "SystolicBP": 0.2734,
+    "DiastolicBP": 0.0502,
+    "BS": 0.4125,
+    "BodyTemp": 0.1293,
+    "HeartRate": 0.0379
+  },
+  "model_selection_partition": "validation_set (N=57)",
+  "validation_metrics": {
+    "Logistic Regression": {
+      "accuracy": 0.7018,
+      "f1_macro": 0.5584,
+      "f1_weighted": 0.653,
+      "high_risk_recall": 0.8,
+      "high_risk_precision": 0.6667,
+      "high_risk_f1": 0.7273,
+      "roc_auc_ovr": 0.7874,
+      "mean_brier_score": 0.1416,
+      "brier_by_class": {
+        "HIGH": 0.09530186456525924,
+        "LOW": 0.1697068511710196,
+        "MEDIUM": 0.1597438693788534
+      }
+    },
+    "Decision Tree": {
+      "accuracy": 0.7193,
+      "f1_macro": 0.6868,
+      "f1_weighted": 0.7361,
+      "high_risk_recall": 0.8,
+      "high_risk_precision": 1.0,
+      "high_risk_f1": 0.8889,
+      "roc_auc_ovr": 0.8307,
+      "mean_brier_score": 0.1352,
+      "brier_by_class": {
+        "HIGH": 0.044778190779443734,
+        "LOW": 0.17627526486987458,
+        "MEDIUM": 0.1846087467576879
+      }
+    },
+    "Random Forest": {
+      "accuracy": 0.6842,
+      "f1_macro": 0.5656,
+      "f1_weighted": 0.6654,
+      "high_risk_recall": 0.7333,
+      "high_risk_precision": 0.8462,
+      "high_risk_f1": 0.7857,
+      "roc_auc_ovr": 0.8333,
+      "mean_brier_score": 0.1225,
+      "brier_by_class": {
+        "HIGH": 0.06573601445709454,
+        "LOW": 0.14307879326419334,
+        "MEDIUM": 0.15868764035800234
+      }
+    },
+    "Gradient Boosting": {
+      "accuracy": 0.7018,
+      "f1_macro": 0.6617,
+      "f1_weighted": 0.721,
+      "high_risk_recall": 0.7333,
+      "high_risk_precision": 0.9167,
+      "high_risk_f1": 0.8148,
+      "roc_auc_ovr": 0.8792,
+      "mean_brier_score": 0.1202,
+      "brier_by_class": {
+        "HIGH": 0.06663476434022281,
+        "LOW": 0.13976391359506646,
+        "MEDIUM": 0.15417394351439764
+      }
+    }
+  },
+  "test_metrics": {
+    "accuracy": 0.7931,
+    "f1_macro": 0.709,
+    "f1_weighted": 0.7637,
+    "high_risk_recall": 0.9333,
+    "high_risk_precision": 0.9333,
+    "high_risk_f1": 0.9333,
+    "roc_auc_ovr": 0.8612,
+    "mean_brier_score": 0.1069,
+    "brier_by_class": {
+      "HIGH": 0.030849950079514164,
+      "LOW": 0.14566640036294706,
+      "MEDIUM": 0.14412879343879312
+    },
+    "confusion_matrix": [
+      [
+        29,
+        1,
+        1
+      ],
+      [
+        9,
+        3,
+        0
+      ],
+      [
+        0,
+        1,
+        14
+      ]
+    ],
+    "classification_report": {
+      "LOW": {
+        "precision": 0.7631578947368421,
+        "recall": 0.9354838709677419,
+        "f1-score": 0.8405797101449275,
+        "support": 31.0
+      },
+      "MEDIUM": {
+        "precision": 0.6,
+        "recall": 0.25,
+        "f1-score": 0.35294117647058826,
+        "support": 12.0
+      },
+      "HIGH": {
+        "precision": 0.9333333333333333,
+        "recall": 0.9333333333333333,
+        "f1-score": 0.9333333333333333,
+        "support": 15.0
+      },
+      "accuracy": 0.7931034482758621,
+      "macro avg": {
+        "precision": 0.7654970760233919,
+        "recall": 0.7062724014336919,
+        "f1-score": 0.7089514066496164,
+        "support": 58.0
+      },
+      "weighted avg": {
+        "precision": 0.7734119782214156,
+        "recall": 0.7931034482758621,
+        "f1-score": 0.7636769850368933,
+        "support": 58.0
+      }
+    },
+    "confidence_intervals_95": {
+      "accuracy": {
+        "lower_95_ci": 0.6897,
+        "upper_95_ci": 0.8966
+      },
+      "f1_macro": {
+        "lower_95_ci": 0.5857,
+        "upper_95_ci": 0.822
+      },
+      "high_risk_recall": {
+        "lower_95_ci": 0.7778,
+        "upper_95_ci": 1.0
+      },
+      "high_risk_precision": {
+        "lower_95_ci": 0.7778,
+        "upper_95_ci": 1.0
+      },
+      "bootstrap_resamples": 1000,
+      "bootstrap_seed": 42
+    }
+  }
+}

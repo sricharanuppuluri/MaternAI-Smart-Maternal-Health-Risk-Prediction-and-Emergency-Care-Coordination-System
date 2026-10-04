@@ -112,14 +112,21 @@ export interface SymptomResponse {
 // ------------------------------------------------------------------------------
 // ML Predictions Contracts (POST /api/v1/predictions)
 // ------------------------------------------------------------------------------
+export type BloodSugarUnit = 'mg/dL' | 'mmol/L';
+export type TemperatureUnit = 'C' | 'F';
+
 export interface MLRiskInput {
   age_years?: number | null;
   hemoglobin?: number | null;
   systolic_bp?: number | null;
   diastolic_bp?: number | null;
   blood_sugar?: number | null;
+  blood_sugar_unit?: BloodSugarUnit | null;
   weight_kg?: number | null;
   pregnancy_week?: number | null;
+  body_temperature?: number | null;
+  temperature_unit?: TemperatureUnit | null;
+  heart_rate?: number | null;
   symptom_features?: Record<string, number | boolean | string>;
 }
 
