@@ -1,8 +1,21 @@
-"""Schemas package for data transfer objects and validation contracts."""
-
+from backend.app.schemas.agent import (
+    AgentQueryRequest,
+    AgentQueryResponse,
+    AgentToolExecution,
+    AgentToolName,
+    ToolExecutionStatus,
+)
 from backend.app.schemas.alert import AlertResponse, AlertSeverity, AlertStatus, AlertStatusUpdate
 from backend.app.schemas.asha import AshaAssignmentResponse, AshaProfileCreate, AshaProfileResponse
 from backend.app.schemas.auth import AuthUser, ProfileCreate, ProfileResponse, UserRole
+from backend.app.schemas.chat import (
+    ChatMessageCreate,
+    ChatSessionCreate,
+    ChatSessionResponse,
+    ChatTurnResponse,
+    MessageItem,
+    MessageSenderRole,
+)
 from backend.app.schemas.common import (
     ApiErrorDetail,
     ApiErrorResponse,
@@ -29,6 +42,11 @@ from backend.app.schemas.timeline import RiskTimelinePoint, RiskTimelineResponse
 from backend.app.schemas.visit import VisitCreate, VisitResponse, VisitStatus
 
 __all__ = [
+    "AgentQueryRequest",
+    "AgentQueryResponse",
+    "AgentToolExecution",
+    "AgentToolName",
+    "ToolExecutionStatus",
     "AlertResponse",
     "AlertSeverity",
     "AlertStatus",
@@ -40,6 +58,12 @@ __all__ = [
     "ProfileCreate",
     "ProfileResponse",
     "UserRole",
+    "ChatMessageCreate",
+    "ChatSessionCreate",
+    "ChatSessionResponse",
+    "ChatTurnResponse",
+    "MessageItem",
+    "MessageSenderRole",
     "ApiErrorDetail",
     "ApiErrorResponse",
     "PaginatedResponse",
@@ -67,3 +91,4 @@ __all__ = [
     "VisitResponse",
     "VisitStatus",
 ]
+
