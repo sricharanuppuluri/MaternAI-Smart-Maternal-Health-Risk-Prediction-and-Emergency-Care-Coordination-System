@@ -508,6 +508,57 @@ def test_synthesize_valid_mother_success(mother_client: TestClient):
     assert repo.audit_logs[-1]["action"] == "VOICE_SYNTHESIZE"
 
 
+def test_synthesize_asha_and_admin_permitted(asha_client: TestClient, admin_client: TestClient):
+    """ASHA and ADMIN established roles are permitted to synthesize audio."""
+    res_asha = asha_client.post(
+        "/api/v1/voice/synthesize",
+        json={"text": "Audio for ASHA care coordination.", "language": "hi"},
+    )
+    assert res_asha.status_code == 200
+
+    res_admin = admin_client.post(
+        "/api/v1/voice/synthesize",
+        json={"text": "Audio for Admin playback.", "language": "en"},
+    )
+    assert res_admin.status_code == 200
+
+
+def test_voice_rejects_unestablished_role(monkeypatch, mother_client: TestClient):
+    """Any unestablished or unauthorized role (e.g. arbitrary/external) is rejected with 403 Forbidden."""
+    from backend.app.schemas.auth import AuthUser
+    from backend.app.auth.dependencies import get_current_user
+    from uuid import uuid4
+
+    # Simulate an authenticated identity with an invalid/unsupported role value via model_construct
+    unsupported_user = AuthUser.model_construct(
+        id=uuid4(),
+        email="unsupported@maternai.org",
+        role="DOCTOR",
+        full_name="Dr. External",
+    )
+    mother_client.app.dependency_overrides[get_current_user] = lambda: unsupported_user
+
+    try:
+        # Transcribe
+        res_transcribe = mother_client.post(
+            "/api/v1/voice/transcribe",
+            json={"audio_content": get_dummy_audio_b64(), "mime_type": "audio/wav", "language": "en"},
+        )
+        assert res_transcribe.status_code == 403
+        assert res_transcribe.json()["error"]["code"] == "FORBIDDEN"
+
+        # Synthesize
+        res_synthesize = mother_client.post(
+            "/api/v1/voice/synthesize",
+            json={"text": "Test synthesis", "language": "en"},
+        )
+        assert res_synthesize.status_code == 403
+        assert res_synthesize.json()["error"]["code"] == "FORBIDDEN"
+    finally:
+        del mother_client.app.dependency_overrides[get_current_user]
+
+
+
 def test_synthesize_empty_or_whitespace_text_rejected(mother_client: TestClient):
     """Empty or whitespace-only text returns 422 VALIDATION_ERROR."""
     res1 = mother_client.post(
