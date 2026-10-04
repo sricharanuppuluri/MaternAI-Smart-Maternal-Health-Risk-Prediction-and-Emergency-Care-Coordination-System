@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Card, Badge, AlertBanner, Button } from '../../components/common';
 import { useAuth } from '../../auth';
 import { timelineService } from '../../services';
@@ -8,20 +8,24 @@ import { formatDate } from '../../utils/formatters';
 
 export const RiskTimelinePage: React.FC = () => {
   const { user } = useAuth();
+  const { motherId: routeMotherId } = useParams<{ motherId?: string }>();
+  const targetMotherId = routeMotherId || user?.id;
+  const isAshaView = Boolean(routeMotherId && routeMotherId !== user?.id);
+
   const [timeline, setTimeline] = useState<RiskTimelineResponse | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(() => Boolean(user?.id));
+  const [isLoading, setIsLoading] = useState<boolean>(() => Boolean(targetMotherId));
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState<number>(0);
 
   useEffect(() => {
     let isMounted = true;
 
-    if (!user?.id) {
+    if (!targetMotherId) {
       return;
     }
 
     timelineService
-      .getRiskTimeline(user.id)
+      .getRiskTimeline(targetMotherId)
       .then((data) => {
         if (isMounted) {
           setTimeline(data);
@@ -43,7 +47,7 @@ export const RiskTimelinePage: React.FC = () => {
     return () => {
       isMounted = false;
     };
-  }, [user?.id, refreshKey]);
+  }, [targetMotherId, refreshKey]);
 
   const handleRefresh = useCallback(() => {
     setIsLoading(true);
@@ -66,20 +70,29 @@ export const RiskTimelinePage: React.FC = () => {
 
   return (
     <div className="portal-page risk-timeline-page" role="region" aria-labelledby="timeline-title">
+      {isAshaView && (
+        <div className="mb-2">
+          <Link to="/asha/mothers" className="text-sm text-primary underline">
+            &larr; Back to Assigned Mothers
+          </Link>
+        </div>
+      )}
       <header className="page-header mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 id="timeline-title" className="page-title text-2xl font-bold">
-            Longitudinal Maternal Risk Timeline
+            Longitudinal Maternal Risk Timeline{isAshaView ? ` (Mother ID: ${targetMotherId})` : ''}
           </h1>
           <p className="page-subtitle text-muted text-sm">
             Chronological record of vital trends, screening risk tiers, and clinical safety events.
           </p>
         </div>
-        <div className="header-actions">
-          <Link to="/mother/health-entry" className="btn btn-primary btn-sm">
-            + Record New Vitals
-          </Link>
-        </div>
+        {!isAshaView && (
+          <div className="header-actions">
+            <Link to="/mother/health-entry" className="btn btn-primary btn-sm">
+              + Record New Vitals
+            </Link>
+          </div>
+        )}
       </header>
 
       {/* Loading State */}

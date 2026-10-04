@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Card, Badge, Button } from '../../components/common';
 
 export const AssignedMothersPage: React.FC = () => {
@@ -44,9 +45,18 @@ export const AssignedMothersPage: React.FC = () => {
                   </td>
                   <td>{m.nextVisit}</td>
                   <td>
-                    <Button variant="outline" size="sm">
-                      View Timeline
-                    </Button>
+                    <div className="flex gap-2">
+                      <Link to={`/asha/mothers/${m.id}/timeline`}>
+                        <Button variant="outline" size="sm">
+                          View Timeline
+                        </Button>
+                      </Link>
+                      <Link to={`/asha/mothers/${m.id}/assistant`}>
+                        <Button variant="secondary" size="sm">
+                          Care Assistant
+                        </Button>
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

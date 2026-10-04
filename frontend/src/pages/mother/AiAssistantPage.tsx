@@ -10,20 +10,31 @@
  */
 
 import React, { useState } from 'react';
+import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../auth';
 import { ChatWindow, AgentQueryCard } from '../../components/ai';
 import { VoiceRecorderCard } from '../../components/voice';
 
 export const AiAssistantPage: React.FC = () => {
   const { user } = useAuth();
+  const { motherId: routeMotherId } = useParams<{ motherId?: string }>();
+  const targetMotherId = routeMotherId || user?.id;
+  const isAshaView = Boolean(routeMotherId && routeMotherId !== user?.id);
   const [activeTab, setActiveTab] = useState<'chat' | 'voice' | 'agent'>('chat');
 
   return (
     <div className="portal-page ai-assistant-page space-y-4" role="region" aria-labelledby="ai-page-title">
+      {isAshaView && (
+        <div className="mb-2">
+          <Link to="/asha/mothers" className="text-sm text-primary underline">
+            &larr; Back to Assigned Mothers
+          </Link>
+        </div>
+      )}
       <header className="page-header mb-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 id="ai-page-title" className="page-title text-2xl font-bold">
-            MaternAI Care Assistant & Decision Support
+            MaternAI Care Assistant & Decision Support{isAshaView ? ` (Assigned Mother: ${targetMotherId})` : ''}
           </h1>
           <p className="page-subtitle text-muted text-sm">
             Conversational maternal guidance and context-aware queries backed by deterministic safety rules.
@@ -84,15 +95,15 @@ export const AiAssistantPage: React.FC = () => {
       {/* Main View Area */}
       {activeTab === 'chat' ? (
         <section aria-label="Interactive Care Chat">
-          <ChatWindow motherId={user?.id} />
+          <ChatWindow motherId={targetMotherId} />
         </section>
       ) : activeTab === 'voice' ? (
         <section aria-label="Multilingual Voice Assistant">
-          <VoiceRecorderCard motherId={user?.id} />
+          <VoiceRecorderCard motherId={targetMotherId} />
         </section>
       ) : (
         <section aria-label="Decision Support Agent">
-          <AgentQueryCard motherId={user?.id} />
+          <AgentQueryCard motherId={targetMotherId} />
         </section>
       )}
     </div>

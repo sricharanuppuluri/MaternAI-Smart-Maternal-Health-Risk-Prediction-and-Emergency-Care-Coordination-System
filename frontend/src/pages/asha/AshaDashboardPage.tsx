@@ -11,10 +11,10 @@ export const AshaDashboardPage: React.FC = () => {
       <header className="dashboard-header">
         <div>
           <h1 id="asha-dash-title" className="dash-title">
-            ASHA Care Coordinator: {user?.fullName || 'Anita Devi'}
+            ASHA Care Coordinator: {user?.fullName || 'Care Coordinator'}
           </h1>
           <p className="dash-subtitle">
-            Community Maternal Surveillance & Escalation Queue (Phase 1 Baseline)
+            Community Maternal Surveillance & Escalation Queue (Care Coordination & Escalation)
           </p>
         </div>
         <div className="header-actions">
