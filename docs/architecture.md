@@ -60,16 +60,23 @@ Supporting Systems:
   - `backend/app/agent/`: AI Agent workflow tools [PLANNED - Phase 6].
   - `backend/app/voice/`: Voice STT/TTS pipeline [PLANNED - Phase 7].
 
-### 2.3 Database Boundary
-- **Status**: [IMPLEMENTED - Schema Foundation & Repository Layer]
-- **Technology**: Supabase PostgreSQL / In-Memory `RepositoryStore`.
-- **Access Control**: PostgreSQL Row Level Security (RLS) policies enforcing patient isolation and ASHA assignment boundaries across all 17 schema entities.
-- **Entities**: `profiles`, `mother_profiles`, `asha_profiles`, `health_records`, `symptoms`, `model_versions`, `predictions`, `safety_events`, `asha_assignments`, `alerts`, `visits`, `follow_ups`, `appointments`, `medication_reminders`, `chat_sessions`, `chat_messages`, `audit_logs`.
+### 2.3 Database & Persistence Boundary
+- **Status**: [IMPLEMENTED - Phase 4 Persistent Database & Repository Layer]
+- **Target Production Architecture**: `FastAPI -> Authentication -> Service -> Repository -> Supabase/PostgreSQL`.
+- **Deterministic Repository Selection**:
+  - **Production Environment (`ENVIRONMENT=production`)**: Strictly requires and instantiates `SupabasePostgresRepository` (configured via `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` or `DATABASE_URL`). If Supabase credentials are missing or unconfigured, the application fails closed at startup with `RuntimeError`. The local disk-backed repository is prohibited from silently becoming the production backend.
+  - **Development / Test Environment**: Explicitly falls back to `RepositoryStore` providing disk-backed relational SQL persistence (`data/maternai.db`) or in-memory storage (`:memory:`), ensuring complete schema parity across all 17 entities and verifying that application data survives process restarts.
+- **Supabase Client Scoping & Identity Propagation**:
+  - **User-Scoped Operations**: Authenticated operations propagate the caller's verified JWT Bearer token via `get_authenticated_client(access_token)` to PostgREST, ensuring PostgreSQL executes queries under `auth.uid()` and enforces Row Level Security (RLS) policies.
+  - **Privileged Operations**: `get_service_client()` uses `SUPABASE_SERVICE_ROLE_KEY` strictly guarded for server-side privileged tasks (immutable audit logging in `audit_logs`, model registry updates in `model_versions`, safety event records in `safety_events`, and initial profile bootstrapping). Service-role keys are never exposed to frontend code.
+- **Entities**: All 17 documented entities (`profiles`, `mother_profiles`, `asha_profiles`, `health_records`, `symptoms`, `model_versions`, `predictions`, `safety_events`, `asha_assignments`, `alerts`, `visits`, `follow_ups`, `appointments`, `medication_reminders`, `chat_sessions`, `chat_messages`, `audit_logs`).
 
 ### 2.4 Authentication Boundary
-- **Status**: [IMPLEMENTED - Fail-Closed Boundary & Role Enforcement]
-- **Architecture**: Production dependency validates RFC 7519 3-segment token structure and fails closed on unverified tokens. Test clients use isolated FastAPI `app.dependency_overrides`. Live Supabase GoTrue / JWKS verification scheduled for live infrastructure deployment.
-- **Roles**: `MOTHER`, `ASHA`, `ADMIN`. Client cannot self-assign roles (protected by database trigger `trg_prevent_role_escalation`).
+- **Status**: [IMPLEMENTED - Phase 4 Cryptographic JWT Verification & Role Integrity]
+- **Architecture**: Production dependency `get_current_user` cryptographically verifies Supabase access tokens (HMAC-SHA256 signature against `SUPABASE_JWT_SECRET`, token structure, expiration, subject claim extraction). Fails closed if token is invalid, expired, malformed, or unconfigured.
+- **Authoritative Role Resolution**: Role is resolved strictly from the database `profiles` table. Client-submitted roles, request body role fields, and arbitrary JWT `user_metadata.role` claims are never trusted for authorization.
+- **Role Integrity**: `POST /api/v1/auth/profile` prevents non-admin users from self-promoting to `ASHA` or `ADMIN`, or mutating existing roles (`403 Forbidden`).
+- **Roles**: `MOTHER`, `ASHA`, `ADMIN`.
 
 ### 2.5 Machine Learning Boundary
 - **Status**: [IMPLEMENTED - Service Boundary & ModelProvider Interface]
@@ -81,7 +88,7 @@ Supporting Systems:
 - **Status**: [IMPLEMENTED - Deterministic Safety Engine & Precedence Layer]
 - **Safety States**: `CLEAR`, `CONCERNING`, `EMERGENCY` (`backend/app/safety/states.py`).
 - **Processing Order**: Validation -> Deterministic Safety Rules -> ML Risk Model -> Decision Layer -> Alerts / Workflow.
-- **Deterministic Precedence**: `DecisionEngine` strictly prioritizes safety: `EMERGENCY` forces `HIGH` risk and cannot be downgraded by ML predictions; `CONCERNING` forces at least `MEDIUM` risk. Non-authoritative clinical rules are kept deferred via an extensible rule registry.
+- **Deterministic Precedence**: `DecisionEngine` strictly prioritizes safety: decision state resolves to `EMERGENCY`, `CONCERNING`, or ML screening classification (`LOW`, `MEDIUM`, `HIGH`). Deterministic safety events are authoritatively logged in `safety_events`. Non-authoritative clinical mappings (such as `EMERGENCY -> HIGH` risk or `EMERGENCY -> CRITICAL` alert) remain explicitly deferred pending approved clinical safety specifications.
 
 ### 2.7 LLM & Agent Boundary
 - **Status**: [PLANNED - Phase 6]

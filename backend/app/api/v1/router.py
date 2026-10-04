@@ -63,27 +63,42 @@ async def health_check(settings: Settings = Depends(get_settings)) -> HealthStat
     response_model=ProfileResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create or Bootstrap User Profile",
-    description="Bootstraps profile for an authenticated Supabase user. Role elevation to ADMIN is prohibited.",
+    description="Bootstraps profile for an authenticated Supabase user. Role elevation to ASHA or ADMIN is prohibited.",
 )
 async def bootstrap_profile(
     payload: ProfileCreate,
     current_user: AuthUser = Depends(get_current_user),
 ) -> ProfileResponse:
     """Bootstrap user profile enforcing role authorization."""
-    if payload.role == UserRole.ADMIN and current_user.role != UserRole.ADMIN:
-        raise ForbiddenError(message="Unauthorized: Regular users cannot bootstrap with ADMIN role.")
-
     repo = get_repository()
+    existing_profile = repo.get_profile(current_user.id)
+
+    # 1. Prohibit normal users from self-promoting to ASHA or ADMIN
+    if payload.role in (UserRole.ADMIN, UserRole.ASHA) and current_user.role != UserRole.ADMIN:
+        raise ForbiddenError(
+            message=f"Unauthorized: Regular users cannot self-assign privileged role '{payload.role.value}'. "
+                    f"ASHA and ADMIN provisioning requires administrative authorization."
+        )
+
+    # 2. Prevent role mutation on existing profiles by non-admins
+    if existing_profile and existing_profile.get("role"):
+        existing_role = existing_profile["role"]
+        existing_role_val = existing_role.value if isinstance(existing_role, UserRole) else str(existing_role)
+        if payload.role.value != existing_role_val and current_user.role != UserRole.ADMIN:
+            raise ForbiddenError(
+                message="Unauthorized: Cannot modify existing role. Role changes require administrator approval."
+            )
+
     now = datetime.now(timezone.utc)
     profile_data = {
         "id": current_user.id,
         "role": payload.role,
         "full_name": payload.full_name,
         "phone": payload.phone,
-        "created_at": now,
+        "created_at": existing_profile["created_at"] if existing_profile else now,
         "updated_at": now,
     }
-    repo.profiles[current_user.id] = profile_data
+    repo.upsert_profile(profile_data)
     if payload.role == UserRole.MOTHER:
         repo.resolve_mother_id(current_user.id)
     repo.log_audit(
@@ -98,8 +113,8 @@ async def bootstrap_profile(
         role=payload.role,
         full_name=payload.full_name,
         phone=payload.phone,
-        created_at=now,
-        updated_at=now,
+        created_at=profile_data["created_at"],
+        updated_at=profile_data["updated_at"],
     )
 
 
