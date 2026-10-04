@@ -531,6 +531,166 @@ List endpoints requiring pagination use `page` and `size` query parameters:
   - `422 Unprocessable Entity`: Validation error, unapproved tool requested, or attempted client field injection.
 - **Audit Behavior**: Emits `AGENT_QUERY` in `audit_logs`.
 
+### 4.15 Transcribe Voice Audio (`POST /api/v1/voice/transcribe`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 7)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Can transcribe audio for her own care context. If `mother_id` is supplied, must match authenticated self.
+  - `ASHA`: Can transcribe audio for assigned mothers. If `mother_id` is supplied, must be an assigned mother.
+  - `ADMIN`: Permitted for all mothers.
+  - Cross-patient / unassigned access returns `403 Forbidden`.
+- **Clinical Observation Confirmation Boundary**:
+  - `transcribe` converts speech audio into text and returns the transcript for user review.
+  - **No clinical records (health records, symptoms, visits) or chat messages are persisted** by this endpoint.
+  - Observations must be explicitly reviewed and confirmed via `POST /api/v1/voice/confirm` before entering the care record or safety workflow.
+- **Technical Audio Constraints**:
+  - `mime_type`: Must be one of `audio/wav`, `audio/webm`, `audio/mp3`, `audio/ogg`, `audio/m4a`.
+  - Maximum payload size: 10 MB decoded audio bytes (`MAX_AUDIO_BYTES`).
+  - Supported language identifiers: `en` (English), `hi` (Hindi), `te` (Telugu), `ta` (Tamil), `kn` (Kannada), `bn` (Bengali), `mr` (Marathi). Unsupported languages return `422 VALIDATION_ERROR`.
+  - Empty or invalid base64 encoding returns `422 VALIDATION_ERROR`.
+- **Request Body (`VoiceTranscriptionRequest`)**:
+```json
+{
+  "audio_content": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+  "mime_type": "audio/wav",
+  "language": "hi",
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "session_id": "823e4567-e89b-12d3-a456-426614174010"
+}
+```
+  *(Note: Request schema enforces `extra='forbid'`. Any attempt by client to inject `safety_state` or unapproved fields is rejected with 422).*
+- **Response Body (`VoiceTranscriptionResponse`)** (HTTP 200 OK):
+```json
+{
+  "transcript": "मुझे पिछले दो दिनों से हल्का सिरदर्द महसूस हो रहा है।",
+  "language": "hi",
+  "detected_language": "hi",
+  "confidence": 0.95,
+  "duration_seconds": 3.4,
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "session_id": "823e4567-e89b-12d3-a456-426614174010",
+  "created_at": "2026-10-04T10:30:00Z"
+}
+```
+- **Provider Abstraction & Failure Behavior**:
+  - Delegated to `STTProvider` interface (e.g. AI4Bharat IndicWhisper).
+  - Provider failure returns `502 Bad Gateway` with error code `PROVIDER_ERROR`. Provider credentials, internal URLs, or raw tracebacks are never leaked to the client.
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Patient isolation violation or unassigned ASHA access.
+  - `404 Not Found`: If `session_id` is supplied and does not exist.
+  - `422 Unprocessable Entity`: Invalid base64, empty audio, unsupported MIME type, unsupported language, or payload exceeding 10 MB.
+  - `502 Bad Gateway`: Upstream speech recognition provider failure (`PROVIDER_ERROR`).
+- **Audit Behavior**: Emits `VOICE_TRANSCRIBE` in `audit_logs`.
+
+### 4.16 Confirm Voice Transcript (`POST /api/v1/voice/confirm`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 7)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Can confirm transcripts only into sessions owned by herself.
+  - `ASHA`: Can confirm transcripts only into sessions belonging to assigned mothers.
+  - `ADMIN`: Permitted for all sessions.
+  - Cross-patient / unassigned access returns `403 Forbidden`.
+- **Safety Architecture & Workflow Integration**:
+  - Explicitly confirms transcribed text and routes it directly into `ChatService.send_message`.
+  - Evaluated deterministically by the authoritative `SafetyEngine`.
+  - Voice does NOT create a separate safety engine or ad-hoc keyword heuristics.
+  - Produces an authoritative `safety_state` (`CLEAR | CONCERNING | EMERGENCY`).
+  - Client cannot inject or override `safety_state` (`extra='forbid'`).
+- **Request Body (`VoiceConfirmationRequest`)**:
+```json
+{
+  "session_id": "823e4567-e89b-12d3-a456-426614174010",
+  "confirmed_text": "I have been experiencing a mild headache and tiredness since yesterday.",
+  "language": "en"
+}
+```
+- **Response Body (`VoiceConfirmationResponse`)** (HTTP 201 Created):
+```json
+{
+  "session_id": "823e4567-e89b-12d3-a456-426614174010",
+  "confirmed_text": "I have been experiencing a mild headache and tiredness since yesterday.",
+  "chat_turn": {
+    "session_id": "823e4567-e89b-12d3-a456-426614174010",
+    "user_message": {
+      "id": "923e4567-e89b-12d3-a456-426614174011",
+      "session_id": "823e4567-e89b-12d3-a456-426614174010",
+      "sender_role": "USER",
+      "content": "I have been experiencing a mild headache and tiredness since yesterday.",
+      "metadata": {
+        "language": "en",
+        "authoritative_safety_state": "CLEAR"
+      },
+      "created_at": "2026-10-04T10:31:00Z"
+    },
+    "assistant_message": {
+      "id": "923e4567-e89b-12d3-a456-426614174012",
+      "session_id": "823e4567-e89b-12d3-a456-426614174010",
+      "sender_role": "ASSISTANT",
+      "content": "Authoritative safety state: CLEAR. Message received and logged in care session. Detailed clinical safety policy is pending authoritative specification.",
+      "metadata": {
+        "safety_state": "CLEAR",
+        "language": "en"
+      },
+      "created_at": "2026-10-04T10:31:01Z"
+    },
+    "safety_state": "CLEAR",
+    "safety_events": [],
+    "disclaimer": "MaternAI provides maternal decision support and educational guidance only. It does not replace professional medical diagnosis, advice, or treatment."
+  },
+  "safety_state": "CLEAR",
+  "confirmed_at": "2026-10-04T10:31:01Z"
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Patient isolation violation or unassigned ASHA access.
+  - `404 Not Found`: Session ID does not exist.
+  - `422 Unprocessable Entity`: Validation failure or attempted client field injection.
+- **Audit Behavior**: Emits `VOICE_CONFIRM` in `audit_logs`.
+
+### 4.17 Synthesize Text to Speech (`POST /api/v1/voice/synthesize`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 7)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Permitted for own playback.
+  - `ASHA`: Permitted for assigned mothers.
+  - `ADMIN`: Permitted.
+- **Technical Synthesis Constraints**:
+  - `text`: Minimum 1 character, maximum 1,000 characters (`MAX_TTS_TEXT_LENGTH`). Empty or whitespace-only text is rejected.
+  - `language`: Must be a supported `VoiceLanguage` (`en`, `hi`, `te`, `ta`, `kn`, `bn`, `mr`).
+  - `output_format`: Must be one of `audio/wav`, `audio/mp3`, `audio/ogg`. Defaults to `audio/wav`.
+- **Request Body (`VoiceSynthesisRequest`)**:
+```json
+{
+  "text": "Your health observation has been safely recorded in your care session.",
+  "language": "en",
+  "output_format": "audio/wav"
+}
+```
+  *(Note: Request schema enforces `extra='forbid'`).*
+- **Response Body (`VoiceSynthesisResponse`)** (HTTP 200 OK):
+```json
+{
+  "audio_content": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+  "mime_type": "audio/wav",
+  "language": "en",
+  "text_length": 68,
+  "duration_seconds": 4.1,
+  "created_at": "2026-10-04T10:32:00Z"
+}
+```
+- **Provider Abstraction & Failure Behavior**:
+  - Delegated to `TTSProvider` interface (e.g. AI4Bharat Indic-TTS).
+  - Provider failure returns `502 Bad Gateway` with error code `PROVIDER_ERROR`.
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Cross-patient / unassigned access.
+  - `422 Unprocessable Entity`: Empty text, text exceeding 1,000 characters, unsupported language, or unsupported output format.
+  - `502 Bad Gateway`: Upstream speech synthesis provider failure (`PROVIDER_ERROR`).
+- **Audit Behavior**: Emits `VOICE_SYNTHESIZE` in `audit_logs`.
+
+
 
 ---
 

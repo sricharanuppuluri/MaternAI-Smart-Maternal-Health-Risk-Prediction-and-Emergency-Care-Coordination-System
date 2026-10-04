@@ -40,6 +40,20 @@ from backend.app.schemas.prediction import (
 from backend.app.schemas.symptom import SymptomItem, SymptomResponse, SymptomSubmission
 from backend.app.schemas.timeline import RiskTimelinePoint, RiskTimelineResponse
 from backend.app.schemas.visit import VisitCreate, VisitResponse, VisitStatus
+from backend.app.schemas.voice import (
+    MAX_AUDIO_BYTES,
+    MAX_AUDIO_DURATION_SECONDS,
+    MAX_TTS_TEXT_LENGTH,
+    SUPPORTED_AUDIO_MIME_TYPES,
+    SUPPORTED_TTS_FORMATS,
+    VoiceConfirmationRequest,
+    VoiceConfirmationResponse,
+    VoiceLanguage,
+    VoiceSynthesisRequest,
+    VoiceSynthesisResponse,
+    VoiceTranscriptionRequest,
+    VoiceTranscriptionResponse,
+)
 
 __all__ = [
     "AgentQueryRequest",
@@ -90,5 +104,18 @@ __all__ = [
     "VisitCreate",
     "VisitResponse",
     "VisitStatus",
+    "VoiceLanguage",
+    "VoiceTranscriptionRequest",
+    "VoiceTranscriptionResponse",
+    "VoiceConfirmationRequest",
+    "VoiceConfirmationResponse",
+    "VoiceSynthesisRequest",
+    "VoiceSynthesisResponse",
+    "SUPPORTED_AUDIO_MIME_TYPES",
+    "SUPPORTED_TTS_FORMATS",
+    "MAX_AUDIO_BYTES",
+    "MAX_TTS_TEXT_LENGTH",
+    "MAX_AUDIO_DURATION_SECONDS",
 ]
+
 

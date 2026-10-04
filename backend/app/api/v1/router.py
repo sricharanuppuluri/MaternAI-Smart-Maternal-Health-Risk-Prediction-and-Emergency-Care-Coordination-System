@@ -36,11 +36,20 @@ from backend.app.schemas.prediction import PredictionRequest, PredictionResponse
 from backend.app.schemas.symptom import SymptomResponse, SymptomSubmission
 from backend.app.schemas.timeline import RiskTimelineResponse
 from backend.app.schemas.visit import VisitCreate, VisitResponse
+from backend.app.schemas.voice import (
+    VoiceConfirmationRequest,
+    VoiceConfirmationResponse,
+    VoiceSynthesisRequest,
+    VoiceSynthesisResponse,
+    VoiceTranscriptionRequest,
+    VoiceTranscriptionResponse,
+)
 from backend.app.services.agent_service import agent_service
 from backend.app.services.chat_service import chat_service
 from backend.app.services.coordination_service import coordination_service
 from backend.app.services.health_service import health_record_service, symptom_service
 from backend.app.services.prediction_service import prediction_service
+from backend.app.services.voice_service import voice_service
 
 api_router = APIRouter()
 
@@ -351,5 +360,60 @@ async def query_agent(
 ) -> AgentQueryResponse:
     """Execute an authorized agent decision-support query with explicit tool allowlist and safety evaluation."""
     return agent_service.execute_query(payload, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 14. Voice Transcription [IMPLEMENTED - Phase 7]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/voice/transcribe",
+    response_model=VoiceTranscriptionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Transcribe Voice Audio",
+    description="Transcribes base64-encoded audio bytes into text. Does not persist clinical data until explicitly confirmed.",
+)
+async def transcribe_audio(
+    payload: VoiceTranscriptionRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> VoiceTranscriptionResponse:
+    """Transcribe audio payload to text without committing clinical data."""
+    return voice_service.transcribe(payload, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 15. Voice Confirmation [IMPLEMENTED - Phase 7]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/voice/confirm",
+    response_model=VoiceConfirmationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Confirm Voice Transcript",
+    description="Confirms transcribed voice text and routes it into the authoritative chat session and SafetyEngine.",
+)
+async def confirm_voice_transcript(
+    payload: VoiceConfirmationRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> VoiceConfirmationResponse:
+    """Explicitly confirm transcribed voice text before authoritative routing and safety evaluation."""
+    return voice_service.confirm(payload, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 16. Voice Synthesis [IMPLEMENTED - Phase 7]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/voice/synthesize",
+    response_model=VoiceSynthesisResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Synthesize Text to Speech",
+    description="Synthesizes text into base64-encoded audio bytes for playback UI.",
+)
+async def synthesize_speech(
+    payload: VoiceSynthesisRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> VoiceSynthesisResponse:
+    """Synthesize text into speech audio bytes for playback."""
+    return voice_service.synthesize(payload, current_user)
+
 
 

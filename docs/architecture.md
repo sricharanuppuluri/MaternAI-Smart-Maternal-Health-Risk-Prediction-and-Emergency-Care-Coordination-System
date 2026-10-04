@@ -103,7 +103,23 @@ Supporting Systems:
 - **Authorized Tool Allowlist**: Constrained strictly to `get_health_summary`, `get_recent_vitals`, `get_recent_symptoms`, `check_safety_alerts`, `get_upcoming_visits`, and `explain_risk_factors`. Unapproved tools are rejected with `422 Unprocessable Entity`.
 
 ### 2.8 Voice Boundary
-- **Status**: [PLANNED - Phase 7]
-- **Technology**: AI4Bharat IndicWhisper (ASR) + Indic-TTS.
-- **Safety Guardrail**: Critical voice-transcribed medical information must be confirmed by the user before entering the risk or alert workflow.
+- **Status**: [IMPLEMENTED - Phase 7 Voice Contracts Frozen]
+- **Technology**: Provider-neutral speech processing layer (`STTProvider` and `TTSProvider` interfaces) integrating open-source AI4Bharat IndicWhisper (ASR) and AI4Bharat Indic-TTS, with future extension points for hosted services (Sarvam AI).
+- **Core Endpoints**:
+  - `POST /api/v1/voice/transcribe`: Audio transcription returning text transcript for user inspection.
+  - `POST /api/v1/voice/confirm`: Explicit user confirmation boundary routing validated observations into care sessions and safety evaluation.
+  - `POST /api/v1/voice/synthesize`: Text-to-speech synthesis generating base64 audio bytes for playback UI.
+- **Clinical Observation Confirmation Boundary**:
+  - Raw audio or speech transcription is **never automatically persisted** as clinical data (health records, symptoms, visits, or care messages).
+  - Transcribed speech must be explicitly reviewed and confirmed by the user before authoritative database persistence.
+- **Safety Architecture & Precedence**:
+  - Voice does NOT introduce a secondary safety engine or ad-hoc keyword heuristics.
+  - Confirmed text routes directly into `ChatService.send_message` and is evaluated deterministically by the authoritative `SafetyEngine`.
+  - Authoritative safety states (`CLEAR`, `CONCERNING`, `EMERGENCY`) remain strictly separate and uncoupled from screening risk levels (`LOW`, `MEDIUM`, `HIGH`).
+  - Clients cannot inject or override `safety_state`.
+- **Audio & Language Constraints**:
+  - Technical audio constraints: supported formats (`audio/wav`, `audio/webm`, `audio/mp3`, `audio/ogg`, `audio/m4a`), max payload 10 MB.
+  - Multilingual scope: explicit language enum `VoiceLanguage` (`en`, `hi`, `te`, `ta`, `kn`, `bn`, `mr`). Unsupported languages yield deterministic `422 VALIDATION_ERROR`.
+  - Provider failure isolation: upstream speech provider errors map to `502 Bad Gateway` (`PROVIDER_ERROR`) without leaking internal secrets, URLs, or tracebacks.
+
 
