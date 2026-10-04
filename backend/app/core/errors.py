@@ -85,3 +85,16 @@ class ValidationError(AppError):
             message=message,
             details=details,
         )
+
+
+class ProviderError(AppError):
+    """502 Bad Gateway / Provider Error: external or upstream service failure."""
+
+    def __init__(self, message: str = "Voice service provider failed to process request", details: Optional[Dict[str, Any]] = None):
+        super().__init__(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            code="PROVIDER_ERROR",
+            message=message,
+            details=details,
+        )
+
