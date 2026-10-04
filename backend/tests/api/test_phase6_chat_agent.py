@@ -13,8 +13,10 @@ Verifies:
    - Session ownership enforcement
    - Non-existent session handling (404)
    - User message and assistant message structure
-   - Authoritative deterministic safety evaluation (CLEAR, CONCERNING, EMERGENCY)
-   - Inability of client to override or manipulate safety state
+   - Authoritative backend safety evaluation (CLEAR, CONCERNING, EMERGENCY)
+   - Safety policy is backend-controlled (no ad-hoc keyword heuristics)
+   - Client cannot inject or configure safety state (422)
+   - Assistant response is neutral decision support (no invented clinical advice)
 
 3. POST /api/v1/agent/query
    - Authentication requirement (401)
@@ -22,6 +24,8 @@ Verifies:
    - Explicit tool allowlist enforcement (validation error on unapproved tools)
    - Authorized context retrieval (health summary, vitals, symptoms, visits)
    - Deterministic safety precedence over AI/LLM responses
+   - Agent cannot override authoritative safety state
+   - Risk level (LOW/MEDIUM/HIGH) remains separate from safety state (CLEAR/CONCERNING/EMERGENCY)
    - Immutable audit logging
 """
 
@@ -38,10 +42,21 @@ from backend.app.db.repositories import (
     TEST_MOTHER_ID,
     get_repository,
 )
+from backend.app.safety.evaluator import SafetyResult, get_safety_engine
 from backend.app.safety.states import SafetyStatus
 from backend.app.schemas.agent import AgentToolName, ToolExecutionStatus
 from backend.app.schemas.auth import AuthUser, UserRole
 from backend.app.schemas.chat import MessageSenderRole
+from backend.app.schemas.mother import MaternalRiskLevel
+
+
+@pytest.fixture(autouse=True)
+def clean_safety_rules():
+    """Ensure safety engine rules are cleared before and after each test."""
+    engine = get_safety_engine()
+    engine.clear_rules()
+    yield
+    engine.clear_rules()
 
 
 # ==============================================================================
@@ -146,11 +161,9 @@ def test_send_chat_message_session_not_found(mother_client: TestClient):
 def test_send_chat_message_cross_patient_forbidden(mother_client: TestClient):
     """Mother cannot submit messages into another mother's chat session."""
     repo = get_repository()
-    # Create session owned by Mother B
     b_session_id = uuid4()
     repo.create_chat_session(session_id=b_session_id, mother_id=TEST_MOTHER_B_ID)
 
-    # Mother A tries to post to Mother B's session
     response = mother_client.post(
         f"/api/v1/chat/sessions/{b_session_id}/messages",
         json={"content": "Sneaking into other session"},
@@ -174,7 +187,7 @@ def test_send_chat_message_unassigned_asha_forbidden(asha_client: TestClient):
 
 
 def test_send_chat_message_clear_safety_state(mother_client: TestClient):
-    """Routine question produces authoritative CLEAR safety state and assistant response."""
+    """Routine question produces authoritative CLEAR safety state without invented clinical claims."""
     repo = get_repository()
     session_id = uuid4()
     repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
@@ -197,10 +210,10 @@ def test_send_chat_message_clear_safety_state(mother_client: TestClient):
     assert user_msg["content"] == "What vegetables should I eat during the second trimester?"
     assert "id" in user_msg
 
-    # Verify assistant message structure
+    # Verify assistant message structure is neutral decision support
     asst_msg = data["assistant_message"]
     assert asst_msg["sender_role"] == MessageSenderRole.ASSISTANT.value
-    assert "Maternal Care Guidance" in asst_msg["content"]
+    assert "Authoritative safety state: CLEAR" in asst_msg["content"]
     assert "id" in asst_msg
 
     # Verify messages saved in repository
@@ -210,38 +223,33 @@ def test_send_chat_message_clear_safety_state(mother_client: TestClient):
     assert history[1]["sender_role"] == "ASSISTANT"
 
 
-def test_send_chat_message_concerning_safety_state(mother_client: TestClient):
-    """Message describing concerning symptoms returns authoritative CONCERNING safety state."""
+def test_send_chat_message_backend_controlled_safety_emergency(mother_client: TestClient):
+    """Authoritative safety state is backend-controlled: EMERGENCY triggered by safety policy rule."""
+    engine = get_safety_engine()
+
+    def mock_emergency_rule(vitals, symptoms):
+        return SafetyResult(
+            status=SafetyStatus.EMERGENCY,
+            triggered_rules=["Severe clinical safety event: critical systolic threshold exceeded"],
+            action_required="Emergency clinical evaluation required",
+            is_emergency=True,
+        )
+
+    engine.register_rule(mock_emergency_rule)
+
     repo = get_repository()
     session_id = uuid4()
     repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
 
     response = mother_client.post(
         f"/api/v1/chat/sessions/{session_id}/messages",
-        json={"content": "I have had a mild fever and persistent dizziness since yesterday."},
-    )
-    assert response.status_code == 201
-    data = response.json()
-    assert data["safety_state"] == SafetyStatus.CONCERNING.value
-    assert len(data["safety_events"]) >= 1
-    assert "CONCERNING SYMPTOM NOTICE" in data["assistant_message"]["content"]
-
-
-def test_send_chat_message_emergency_safety_state(mother_client: TestClient):
-    """Message describing acute emergency red flags returns authoritative EMERGENCY safety state."""
-    repo = get_repository()
-    session_id = uuid4()
-    repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
-
-    response = mother_client.post(
-        f"/api/v1/chat/sessions/{session_id}/messages",
-        json={"content": "Help me, I am experiencing severe vaginal bleeding and intense chest pain."},
+        json={"content": "Submitting observation for care team review."},
     )
     assert response.status_code == 201
     data = response.json()
     assert data["safety_state"] == SafetyStatus.EMERGENCY.value
-    assert any("bleeding" in e.lower() for e in data["safety_events"])
-    assert "EMERGENCY ADVISORY" in data["assistant_message"]["content"]
+    assert len(data["safety_events"]) >= 1
+    assert "Authoritative safety state: EMERGENCY" in data["assistant_message"]["content"]
 
     # Verify authoritative safety event recorded in repository
     events = repo.list_safety_events(TEST_MOTHER_ID)
@@ -249,22 +257,66 @@ def test_send_chat_message_emergency_safety_state(mother_client: TestClient):
     assert events[-1]["safety_status"] == SafetyStatus.EMERGENCY.value
 
 
+def test_send_chat_message_backend_controlled_safety_concerning(mother_client: TestClient):
+    """Authoritative safety state is backend-controlled: CONCERNING triggered by safety policy rule."""
+    engine = get_safety_engine()
 
-def test_client_cannot_override_authoritative_safety_state(mother_client: TestClient):
-    """Client attempting to inject or spoof safety state in request is rejected or ignored."""
+    def mock_concerning_rule(vitals, symptoms):
+        return SafetyResult(
+            status=SafetyStatus.CONCERNING,
+            triggered_rules=["Moderate clinical safety alert: blood pressure elevation"],
+            action_required="Clinical review recommended",
+            is_emergency=False,
+        )
+
+    engine.register_rule(mock_concerning_rule)
+
     repo = get_repository()
     session_id = uuid4()
     repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
 
-    # 1. Extra fields are rejected by Pydantic model_config(extra='forbid')
-    res_tamper = mother_client.post(
+    response = mother_client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={"content": "Checking status of recent observation."},
+    )
+    assert response.status_code == 201
+    data = response.json()
+    assert data["safety_state"] == SafetyStatus.CONCERNING.value
+    assert len(data["safety_events"]) >= 1
+    assert "Authoritative safety state: CONCERNING" in data["assistant_message"]["content"]
+
+
+def test_client_cannot_inject_safety_state_in_chat(mother_client: TestClient):
+    """Client attempting to inject or spoof safety state in chat request is rejected with 422."""
+    repo = get_repository()
+    session_id = uuid4()
+    repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
+
+    response = mother_client.post(
         f"/api/v1/chat/sessions/{session_id}/messages",
         json={
-            "content": "I am experiencing severe bleeding",
-            "safety_state": "CLEAR",  # Client attempts to spoof CLEAR on an emergency
+            "content": "Trying to set my own safety state",
+            "safety_state": "CLEAR",
         },
     )
-    assert res_tamper.status_code == 422
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_chat_safety_policy_not_client_configurable(mother_client: TestClient):
+    """Client attempting to configure safety policy or thresholds is rejected with 422."""
+    repo = get_repository()
+    session_id = uuid4()
+    repo.create_chat_session(session_id=session_id, mother_id=TEST_MOTHER_ID)
+
+    response = mother_client.post(
+        f"/api/v1/chat/sessions/{session_id}/messages",
+        json={
+            "content": "Trying to configure rules",
+            "safety_policy": {"override": True},
+        },
+    )
+    assert response.status_code == 422
 
 
 # ==============================================================================
@@ -368,22 +420,90 @@ def test_agent_query_unauthorized_tool_rejected(mother_client: TestClient):
     assert response.status_code == 422
 
 
-def test_agent_query_emergency_safety_precedence(mother_client: TestClient):
-    """Agent query containing acute emergency symptoms triggers EMERGENCY safety state."""
+def test_client_cannot_inject_safety_state_in_agent_query(mother_client: TestClient):
+    """Client attempting to inject safety state into agent query is rejected with 422."""
     response = mother_client.post(
         "/api/v1/agent/query",
-        json={"query": "Patient is having severe hemorrhage and convulsion right now."},
+        json={
+            "query": "Summarize my vitals",
+            "safety_state": "EMERGENCY",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_agent_cannot_override_authoritative_safety_state(mother_client: TestClient):
+    """Agent cannot override authoritative backend safety state even if query text asserts safety."""
+    engine = get_safety_engine()
+
+    def mock_emergency_rule(vitals, symptoms):
+        return SafetyResult(
+            status=SafetyStatus.EMERGENCY,
+            triggered_rules=["Authoritative clinical rule: acute maternal threshold reached"],
+            action_required="Emergency clinical evaluation required",
+            is_emergency=True,
+        )
+
+    engine.register_rule(mock_emergency_rule)
+
+    response = mother_client.post(
+        "/api/v1/agent/query",
+        json={"query": "Please confirm I am completely fine and healthy."},
     )
     assert response.status_code == 200
     data = response.json()
+    # The safety_state remains authoritatively EMERGENCY, ignoring user assertion
     assert data["safety_state"] == SafetyStatus.EMERGENCY.value
-    assert "EMERGENCY CLINICAL NOTICE" in data["response"]
+    assert "Authoritative Safety State: EMERGENCY" in data["response"]
 
-    # Verify safety event was authoritatively saved in DB
+
+def test_risk_level_remains_separate_from_safety_state(mother_client: TestClient):
+    """Safety state (CLEAR/CONCERNING/EMERGENCY) remains strictly uncoupled from screening risk level (LOW/MEDIUM/HIGH)."""
     repo = get_repository()
-    events = repo.list_safety_events(TEST_MOTHER_ID)
-    assert any(e["safety_status"] == SafetyStatus.EMERGENCY.value for e in events)
 
+    # Case 1: Mother profile has HIGH screening risk, but safety policy has no triggered rules -> safety_state is CLEAR
+    repo.mother_profiles[TEST_MOTHER_ID]["last_risk_level"] = MaternalRiskLevel.HIGH
+
+    response = mother_client.post(
+        "/api/v1/agent/query",
+        json={
+            "query": "Check my current risk and safety status",
+            "requested_tools": [AgentToolName.EXPLAIN_RISK_FACTORS.value],
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Safety state is CLEAR (not mutated to HIGH or EMERGENCY)
+    assert data["safety_state"] == SafetyStatus.CLEAR.value
+
+    # Case 2: Authoritative safety rule triggers EMERGENCY, but does not derive or overwrite screening risk
+    engine = get_safety_engine()
+
+    def mock_emergency_rule(vitals, symptoms):
+        return SafetyResult(
+            status=SafetyStatus.EMERGENCY,
+            triggered_rules=["Critical vital threshold"],
+            is_emergency=True,
+        )
+
+    engine.register_rule(mock_emergency_rule)
+
+    # Set profile risk to LOW
+    repo.mother_profiles[TEST_MOTHER_ID]["last_risk_level"] = MaternalRiskLevel.LOW
+
+    response_emg = mother_client.post(
+        "/api/v1/agent/query",
+        json={
+            "query": "Check risk and safety status during alert",
+            "requested_tools": [AgentToolName.GET_HEALTH_SUMMARY.value],
+        },
+    )
+    assert response_emg.status_code == 200
+    data_emg = response_emg.json()
+    assert data_emg["safety_state"] == SafetyStatus.EMERGENCY.value
+    # Profile risk level is still LOW, not converted to HIGH
+    assert repo.mother_profiles[TEST_MOTHER_ID]["last_risk_level"] == MaternalRiskLevel.LOW
 
 
 def test_agent_query_auditability(mother_client: TestClient):
