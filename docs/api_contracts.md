@@ -344,7 +344,7 @@ List endpoints requiring pagination use `page` and `size` query parameters:
 ```
 
 ### 4.11 Longitudinal Risk Timeline (`GET /api/v1/mothers/{id}/risk-timeline`)
-- **Status**: `CONTRACT FROZEN` (Implementation scheduled for Phase 4/5)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED`
 - **Response Body**:
 ```json
 {
@@ -364,6 +364,170 @@ List endpoints requiring pagination use `page` and `size` query parameters:
   ]
 }
 ```
+
+### 4.12 Create Chat Session (`POST /api/v1/chat/sessions`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 6)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Defaults to authenticated mother's ID. If `mother_id` is supplied, must match authenticated user, otherwise `403 Forbidden`.
+  - `ASHA`: `mother_id` is required; must be an actively assigned mother, otherwise `403 Forbidden`.
+  - `ADMIN`: Permitted for all mothers.
+- **Request Body (`ChatSessionCreate`)**:
+```json
+{
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "title": "First Trimester Nutrition and Symptoms",
+  "language": "en"
+}
+```
+- **Response Body (`ChatSessionResponse`)** (HTTP 201 Created):
+```json
+{
+  "id": "823e4567-e89b-12d3-a456-426614174010",
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "title": "First Trimester Nutrition and Symptoms",
+  "language": "en",
+  "created_at": "2026-10-04T10:00:00Z"
+}
+```
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Patient isolation violation or unassigned ASHA access.
+  - `422 Unprocessable Entity`: Validation failure.
+- **Audit Behavior**: Emits `CREATE_CHAT_SESSION` in `audit_logs`.
+
+### 4.13 Submit Chat Message (`POST /api/v1/chat/sessions/{session_id}/messages`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 6)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Can submit messages only to sessions belonging to the authenticated mother.
+  - `ASHA`: Can submit messages only to sessions belonging to assigned mothers.
+  - `ADMIN`: Permitted for all sessions.
+  - Cross-patient / unassigned access returns `403 Forbidden`.
+- **Request Body (`ChatMessageCreate`)**:
+```json
+{
+  "content": "I have been experiencing a mild headache and fever since yesterday.",
+  "language": "en"
+}
+```
+  *(Note: Request schema enforces `extra='forbid'`. Any attempt by client to inject `safety_state`, `sender_role`, or overrides is rejected with 422).*
+- **Response Body (`ChatTurnResponse`)** (HTTP 201 Created):
+```json
+{
+  "session_id": "823e4567-e89b-12d3-a456-426614174010",
+  "user_message": {
+    "id": "923e4567-e89b-12d3-a456-426614174011",
+    "session_id": "823e4567-e89b-12d3-a456-426614174010",
+    "sender_role": "USER",
+    "content": "I have been experiencing a mild headache and fever since yesterday.",
+    "metadata": {
+      "language": "en",
+      "authoritative_safety_state": "CONCERNING"
+    },
+    "created_at": "2026-10-04T10:05:00Z"
+  },
+  "assistant_message": {
+    "id": "923e4567-e89b-12d3-a456-426614174012",
+    "session_id": "823e4567-e89b-12d3-a456-426614174010",
+    "sender_role": "ASSISTANT",
+    "content": "CONCERNING SYMPTOM NOTICE: Your report mentions symptoms that warrant prompt attention. Please consult your assigned ASHA worker or healthcare provider for clinical evaluation.",
+    "metadata": {
+      "safety_state": "CONCERNING",
+      "language": "en"
+    },
+    "created_at": "2026-10-04T10:05:01Z"
+  },
+  "safety_state": "CONCERNING",
+  "safety_events": [
+    "Concerning symptom keyword detected: 'fever'",
+    "Concerning symptom keyword detected: 'headache'"
+  ],
+  "disclaimer": "MaternAI provides maternal decision support and educational guidance only. It does not replace professional medical diagnosis, advice, or treatment."
+}
+```
+- **Authoritative Safety Evaluation**:
+  - `SafetyStatus`: `CLEAR | CONCERNING | EMERGENCY`.
+  - Backend is 100% authoritative for safety state.
+  - If `EMERGENCY` is triggered: records an authoritative `safety_events` row in DB, sets `safety_state = EMERGENCY`, and assistant message provides emergency escalation guidance.
+  - Distinct from clinical screening `risk_level` (`LOW | MEDIUM | HIGH`). No unapproved conversions.
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Cross-patient / unassigned session access.
+  - `404 Not Found`: Session ID does not exist.
+  - `422 Unprocessable Entity`: Validation failure or attempted client field injection.
+- **Audit Behavior**: Emits `CREATE_CHAT_MESSAGE` in `audit_logs`.
+
+### 4.14 Query Decision-Support Agent (`POST /api/v1/agent/query`)
+- **Status**: `CONTRACT FROZEN - IMPLEMENTED (Phase 6)`
+- **Authentication**: Required (`Bearer <supabase_access_token>`).
+- **Authorization & Ownership**:
+  - `MOTHER`: Can query agent only for herself.
+  - `ASHA`: Can query agent only for assigned mothers.
+  - `ADMIN`: Permitted for all mothers.
+  - Cross-patient / unassigned access returns `403 Forbidden`.
+- **Authorized Tools Explicit Allowlist (`AgentToolName`)**:
+  1. `get_health_summary`: Reads maternal profile, baseline gestational age, and assigned ASHA.
+  2. `get_recent_vitals`: Reads recent maternal vital recordings within patient boundary.
+  3. `get_recent_symptoms`: Reads reported maternal symptoms within patient boundary.
+  4. `check_safety_alerts`: Reads active safety events and coordination alerts.
+  5. `get_upcoming_visits`: Reads scheduled visits and follow-up tasks.
+  6. `explain_risk_factors`: Explains contributing risk factors from latest ML screening prediction.
+  *Any requested tool outside this allowlist is strictly rejected with `422 Unprocessable Entity`.*
+- **Request Body (`AgentQueryRequest`)**:
+```json
+{
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "query": "What are my upcoming visits and risk factors?",
+  "requested_tools": [
+    "get_upcoming_visits",
+    "explain_risk_factors"
+  ],
+  "language": "en"
+}
+```
+- **Response Body (`AgentQueryResponse`)** (HTTP 200 OK):
+```json
+{
+  "mother_id": "223e4567-e89b-12d3-a456-426614174001",
+  "query": "What are my upcoming visits and risk factors?",
+  "response": "Decision Support Summary: Patient baseline records and recent observations are within regular tracking parameters.\n\nAuthorized Context Evaluated:\n- get_upcoming_visits: Retrieved 1 visit(s) and 1 follow-up task(s).\n- explain_risk_factors: Latest screening tier: LOW. 2 contributing factor(s).\n\nGuidance: Maintain routine antenatal visits and standard care coordination.",
+  "safety_state": "CLEAR",
+  "tools_invoked": [
+    {
+      "tool_name": "get_upcoming_visits",
+      "status": "SUCCESS",
+      "summary": "Retrieved 1 visit(s) and 1 follow-up task(s).",
+      "data": {
+        "visits_count": 1,
+        "followups_count": 1
+      }
+    },
+    {
+      "tool_name": "explain_risk_factors",
+      "status": "SUCCESS",
+      "summary": "Latest screening tier: LOW. 2 contributing factor(s).",
+      "data": {
+        "risk_level": "LOW",
+        "factors": [
+          {"feature": "systolic_bp", "impact": 0.45},
+          {"feature": "blood_sugar", "impact": 0.32}
+        ]
+      }
+    }
+  ],
+  "disclaimer": "MaternAI Agent provides maternal decision support and informational coordination only. It does not replace professional medical diagnosis, advice, or treatment.",
+  "created_at": "2026-10-04T10:10:00Z"
+}
+```
+- **Deterministic Safety Precedence**:
+  - Acute emergency symptoms in query trigger `safety_state = EMERGENCY`, record an authoritative safety event in DB, and override agent reasoning with emergency triage escalation notice.
+- **Error Responses**:
+  - `401 Unauthorized`: Missing or invalid Bearer token.
+  - `403 Forbidden`: Cross-patient / unassigned access.
+  - `422 Unprocessable Entity`: Validation error or unauthorized tool requested.
+- **Audit Behavior**: Emits `AGENT_QUERY` in `audit_logs`.
+
 
 ---
 
@@ -387,8 +551,8 @@ The following matrix documents the database Row Level Security (RLS) and backend
 | `follow_ups` | SELECT (own) | SELECT (assigned), INSERT (assigned), UPDATE (assigned) | DENIED | ALL | ASHA Only | Follow-up tracking and status updates by assigned ASHA. |
 | `appointments` | SELECT (own), INSERT (own), UPDATE (own) | SELECT (assigned), INSERT (assigned), UPDATE (assigned) | DENIED | ALL | Yes | Scheduled clinical appointments. |
 | `medication_reminders` | SELECT (own), INSERT (own), UPDATE (own) | SELECT (assigned), INSERT (assigned), UPDATE (assigned) | DENIED | ALL | Yes | Prescribed medication reminders and adherence. |
-| `chat_sessions` | SELECT (own), INSERT (own), UPDATE (own), DELETE (own) | DENIED | DENIED | ALL | Mother Only | Private maternal conversation sessions. |
-| `chat_messages` | SELECT (own session), INSERT (own session) | DENIED | DENIED | ALL | Mother Only | Chat transcript; UPDATE/DELETE restricted. |
+| `chat_sessions` | SELECT (own), INSERT (own), UPDATE (own), DELETE (own) | SELECT (assigned), INSERT (assigned) | DENIED | ALL | Mother & Assigned ASHA | Private maternal conversation sessions. Mothers can access own; ASHAs can access assigned. |
+| `chat_messages` | SELECT (own session), INSERT (own session) | SELECT (assigned session), INSERT (assigned session) | DENIED | ALL | Mother & Assigned ASHA | Chat transcript; UPDATE/DELETE restricted to protect conversation integrity. |
 | `audit_logs` | **DENIED** (No read) | **DENIED** (No read) | **DENIED** (No read) | SELECT (Admin Only) | **DENIED** (Server Only) | Immutable system audit log. UPDATE and DELETE are strictly denied for all roles including Admin. |
 
 ---
@@ -425,3 +589,18 @@ The following matrix documents the database Row Level Security (RLS) and backend
 ### 6.5 Row Level Security (RLS) Verification Status
 - **Static Migration & Policy Analysis**: **PASSED**. All 17 entities, explicit `search_path = public, auth` on security definer functions, anti-escalation triggers (`trg_prevent_role_escalation`, `trg_prevent_mother_authoritative_update`), and audit log immutability are verified via static regex and AST analysis (`backend/tests/security/test_database_rls_contracts.py`).
 - **Runtime PostgreSQL / Supabase RLS Execution**: **BLOCKED / DEFERRED**. Live execution of SQL role-switching and RLS queries against an active database could not be executed locally because neither Docker, the Supabase CLI, nor local PostgreSQL (`psql`) are installed on the local host machine. A dedicated live integration test runner (`backend/tests/integration/test_supabase_rls_live.py`) detects environment availability and cleanly defers execution until a running PostgreSQL / Supabase instance is provided.
+
+### 6.6 Authorized Agent Tools Allowlist & Safety Precedence (Phase 6)
+- **Explicit Authorized Tool Allowlist (`AgentToolName`)**:
+  - `get_health_summary`: Retrieves maternal profile baseline (gestational week, assigned ASHA, last risk level).
+  - `get_recent_vitals`: Retrieves recorded vital measurements for the authorized mother.
+  - `get_recent_symptoms`: Retrieves reported symptoms within the authorized mother scope.
+  - `check_safety_alerts`: Retrieves recorded safety events and workflow alerts.
+  - `get_upcoming_visits`: Retrieves scheduled in-person visits and follow-up tracking tasks.
+  - `explain_risk_factors`: Retrieves structured explanation of contributing risk factors from latest ML prediction without autonomous diagnosis.
+- **Strict Allowlist Enforcement**: Any tool requested outside `AgentToolName` is rejected with HTTP `422 Unprocessable Entity`.
+- **Deterministic Safety Precedence**:
+  - Queries describing acute emergency red flags immediately trigger `safety_state = EMERGENCY` and authoritatively record a safety event in the database.
+  - The decision-support agent NEVER overrides, alters, or downgrades a deterministic safety decision.
+  - Safety state is strictly categorical (`CLEAR`, `CONCERNING`, `EMERGENCY`) and must never be converted or mapped to clinical risk levels (`LOW`, `MEDIUM`, `HIGH`).
+

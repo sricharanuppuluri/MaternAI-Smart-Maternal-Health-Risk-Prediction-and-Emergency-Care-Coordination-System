@@ -91,9 +91,11 @@ Supporting Systems:
 - **Deterministic Precedence**: `DecisionEngine` strictly prioritizes safety: decision state resolves to `EMERGENCY`, `CONCERNING`, or ML screening classification (`LOW`, `MEDIUM`, `HIGH`). Deterministic safety events are authoritatively logged in `safety_events`. Non-authoritative clinical mappings (such as `EMERGENCY -> HIGH` risk or `EMERGENCY -> CRITICAL` alert) remain explicitly deferred pending approved clinical safety specifications.
 
 ### 2.7 LLM & Agent Boundary
-- **Status**: [PLANNED - Phase 6]
-- **Technology**: Local inference (e.g. Ollama with open weights).
-- **Scope**: Natural language explanations of structured risk, translation, and authorized agent queries. LLM never independently determines clinical risk.
+- **Status**: [IMPLEMENTED - Phase 6 Chat & Agent Contracts Frozen]
+- **Technology**: Local inference (e.g. Ollama with open weights) & deterministic agent tool orchestration.
+- **Scope**: Chat sessions, conversational message handling, natural language explanations of structured risk, translation, and authorized agent queries. LLM never independently determines clinical risk.
+- **Safety Precedence**: Deterministic safety rules strictly take precedence over LLM/agent responses. Safety state is categorized as `CLEAR`, `CONCERNING`, or `EMERGENCY`.
+- **Authorized Tool Allowlist**: Constrained strictly to `get_health_summary`, `get_recent_vitals`, `get_recent_symptoms`, `check_safety_alerts`, `get_upcoming_visits`, and `explain_risk_factors`.
 
 ### 2.8 Voice Boundary
 - **Status**: [PLANNED - Phase 7]
