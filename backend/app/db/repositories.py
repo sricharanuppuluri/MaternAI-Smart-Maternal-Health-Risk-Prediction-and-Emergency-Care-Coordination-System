@@ -1055,6 +1055,114 @@ class RepositoryStore:
                 for r in cur.fetchall()
             ]
 
+    # --- Chat Sessions & Messages (Phase 6) ---
+
+    def create_chat_session(
+        self,
+        session_id: UUID,
+        mother_id: UUID,
+        created_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Create a new chat session for an authorized mother."""
+        with self._lock:
+            cur = self._conn.cursor()
+            now = created_at or datetime.now(timezone.utc)
+            cur.execute(
+                """
+                INSERT INTO chat_sessions (id, mother_id, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (str(session_id), str(mother_id), _to_iso(now)),
+            )
+            self._conn.commit()
+            return {
+                "id": session_id,
+                "mother_id": mother_id,
+                "created_at": now,
+            }
+
+    def get_chat_session(self, session_id: UUID) -> Optional[Dict[str, Any]]:
+        """Retrieve chat session by ID."""
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("SELECT * FROM chat_sessions WHERE id = ?", (str(session_id),))
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                "id": UUID(row["id"]),
+                "mother_id": UUID(row["mother_id"]),
+                "created_at": _parse_dt(row["created_at"]),
+            }
+
+    def list_chat_sessions(self, mother_id: UUID) -> List[Dict[str, Any]]:
+        """List chat sessions for a specific mother."""
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                "SELECT * FROM chat_sessions WHERE mother_id = ? ORDER BY created_at DESC",
+                (str(mother_id),),
+            )
+            return [
+                {
+                    "id": UUID(r["id"]),
+                    "mother_id": UUID(r["mother_id"]),
+                    "created_at": _parse_dt(r["created_at"]),
+                }
+                for r in cur.fetchall()
+            ]
+
+    def add_chat_message(
+        self,
+        message_id: UUID,
+        session_id: UUID,
+        sender_role: str,
+        content: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        created_at: Optional[datetime] = None,
+    ) -> Dict[str, Any]:
+        """Record a chat message in the session transcript."""
+        with self._lock:
+            cur = self._conn.cursor()
+            now = created_at or datetime.now(timezone.utc)
+            meta_json = json.dumps(metadata or {})
+            cur.execute(
+                """
+                INSERT INTO chat_messages (id, session_id, sender_role, content, metadata, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (str(message_id), str(session_id), sender_role, content, meta_json, _to_iso(now)),
+            )
+            self._conn.commit()
+            return {
+                "id": message_id,
+                "session_id": session_id,
+                "sender_role": sender_role,
+                "content": content,
+                "metadata": metadata or {},
+                "created_at": now,
+            }
+
+    def get_chat_messages(self, session_id: UUID) -> List[Dict[str, Any]]:
+        """Retrieve ordered chat messages for a session."""
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute(
+                "SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC",
+                (str(session_id),),
+            )
+            return [
+                {
+                    "id": UUID(r["id"]),
+                    "session_id": UUID(r["session_id"]),
+                    "sender_role": r["sender_role"],
+                    "content": r["content"],
+                    "metadata": json.loads(r["metadata"]) if r["metadata"] else {},
+                    "created_at": _parse_dt(r["created_at"]),
+                }
+                for r in cur.fetchall()
+            ]
+
     # --- Properties providing backward compatibility with existing tests ---
 
     @property
@@ -1249,6 +1357,38 @@ class RepositoryStore:
                 }
                 for r in cur.fetchall()
             ]
+
+    @property
+    def chat_sessions(self) -> Dict[UUID, Dict[str, Any]]:
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("SELECT * FROM chat_sessions")
+            return {
+                UUID(r["id"]): {
+                    "id": UUID(r["id"]),
+                    "mother_id": UUID(r["mother_id"]),
+                    "created_at": _parse_dt(r["created_at"]),
+                }
+                for r in cur.fetchall()
+            }
+
+    @property
+    def chat_messages(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute("SELECT * FROM chat_messages ORDER BY created_at ASC")
+            return [
+                {
+                    "id": UUID(r["id"]),
+                    "session_id": UUID(r["session_id"]),
+                    "sender_role": r["sender_role"],
+                    "content": r["content"],
+                    "metadata": json.loads(r["metadata"]) if r["metadata"] else {},
+                    "created_at": _parse_dt(r["created_at"]),
+                }
+                for r in cur.fetchall()
+            ]
+
 
 
 # Cloud Supabase integration adapter
