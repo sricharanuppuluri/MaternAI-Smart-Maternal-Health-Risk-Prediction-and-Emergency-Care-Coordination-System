@@ -10,3 +10,4 @@ export * from './followUpService';
 export * from './timelineService';
 export * from './chatService';
 export * from './agentService';
+export * from './voiceService';

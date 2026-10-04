@@ -12,10 +12,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../auth';
 import { ChatWindow, AgentQueryCard } from '../../components/ai';
+import { VoiceRecorderCard } from '../../components/voice';
 
 export const AiAssistantPage: React.FC = () => {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState<'chat' | 'agent'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'voice' | 'agent'>('chat');
 
   return (
     <div className="portal-page ai-assistant-page space-y-4" role="region" aria-labelledby="ai-page-title">
@@ -47,6 +48,19 @@ export const AiAssistantPage: React.FC = () => {
           <button
             type="button"
             role="tab"
+            aria-selected={activeTab === 'voice'}
+            onClick={() => setActiveTab('voice')}
+            className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
+              activeTab === 'voice'
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-muted hover:text-foreground'
+            }`}
+          >
+            Voice Assistant
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'agent'}
             onClick={() => setActiveTab('agent')}
             className={`px-3 py-1.5 text-xs font-semibold rounded transition-colors ${
@@ -71,6 +85,10 @@ export const AiAssistantPage: React.FC = () => {
       {activeTab === 'chat' ? (
         <section aria-label="Interactive Care Chat">
           <ChatWindow motherId={user?.id} />
+        </section>
+      ) : activeTab === 'voice' ? (
+        <section aria-label="Multilingual Voice Assistant">
+          <VoiceRecorderCard motherId={user?.id} />
         </section>
       ) : (
         <section aria-label="Decision Support Agent">

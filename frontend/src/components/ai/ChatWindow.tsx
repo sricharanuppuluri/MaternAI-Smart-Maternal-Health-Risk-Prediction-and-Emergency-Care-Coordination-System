@@ -13,12 +13,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Button, AlertBanner } from '../common';
 import { ChatMessageItem } from './ChatMessageItem';
+import { VoiceRecorderCard } from '../voice/VoiceRecorderCard';
 import { chatService } from '../../services/chatService';
 import type {
   ChatSessionResponse,
   MessageItem,
   SafetyStatus,
 } from '../../types/ai';
+import type { VoiceConfirmationResponse } from '../../types/voice';
 
 export interface ChatMessageEntry {
   message: MessageItem;
@@ -46,8 +48,25 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [sessionKey, setSessionKey] = useState<number>(0);
+  const [showVoiceRecorder, setShowVoiceRecorder] = useState<boolean>(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleVoiceConfirmedTurn = (turn: VoiceConfirmationResponse) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        message: turn.chat_turn.user_message,
+      },
+      {
+        message: turn.chat_turn.assistant_message,
+        safetyState: turn.chat_turn.safety_state,
+        safetyEvents: turn.chat_turn.safety_events,
+        disclaimer: turn.chat_turn.disclaimer,
+      },
+    ]);
+    setShowVoiceRecorder(false);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -231,6 +250,28 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Optional Voice Recording Overlay / Card */}
+      {showVoiceRecorder && (
+        <div className="voice-recorder-overlay mt-2 p-2 border-t">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-primary">Voice Input Mode</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowVoiceRecorder(false)}
+              className="text-[11px] py-0.5 px-2"
+            >
+              Close Voice
+            </Button>
+          </div>
+          <VoiceRecorderCard
+            sessionId={session?.id}
+            motherId={motherId}
+            onConfirmedTurn={handleVoiceConfirmedTurn}
+          />
+        </div>
+      )}
+
       {/* Message Input & Send Bar */}
       <div className="chat-input-bar mt-3 pt-2 border-t flex items-center gap-2">
         <input
@@ -244,6 +285,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           className="form-input flex-1 text-sm p-2 border rounded"
           aria-label="Chat message input"
         />
+        <Button
+          variant="outline"
+          onClick={() => setShowVoiceRecorder((prev) => !prev)}
+          disabled={!session || isSending || isInitializing}
+          aria-label="Toggle voice input recorder"
+          title="Record voice message"
+        >
+          {showVoiceRecorder ? 'Hide Voice' : 'Voice Input'}
+        </Button>
         <Button
           variant="primary"
           onClick={() => handleSendMessage()}
