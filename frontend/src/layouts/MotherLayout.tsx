@@ -27,6 +27,12 @@ export const MotherLayout: React.FC = () => {
             >
               Risk Timeline
             </NavLink>
+            <NavLink
+              to="/mother/ai-assistant"
+              className={({ isActive }) => `portal-link ${isActive ? 'active' : ''}`}
+            >
+              AI Assistant
+            </NavLink>
           </div>
         </div>
       </div>

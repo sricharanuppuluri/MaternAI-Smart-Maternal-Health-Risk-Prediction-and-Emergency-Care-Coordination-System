@@ -8,3 +8,5 @@ export * from './alertService';
 export * from './visitService';
 export * from './followUpService';
 export * from './timelineService';
+export * from './chatService';
+export * from './agentService';

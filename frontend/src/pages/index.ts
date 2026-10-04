@@ -5,6 +5,7 @@ export * from './auth/RegisterPage';
 export * from './mother/MotherDashboardPage';
 export * from './mother/HealthRecordEntryPage';
 export * from './mother/RiskTimelinePage';
+export * from './mother/AiAssistantPage';
 export * from './asha/AshaDashboardPage';
 export * from './asha/AlertsQueuePage';
 export * from './asha/AssignedMothersPage';
