@@ -18,8 +18,15 @@ from backend.app.auth.dependencies import (
 from backend.app.core.config import Settings, get_settings
 from backend.app.core.errors import ForbiddenError
 from backend.app.db.repositories import get_repository
+from backend.app.schemas.agent import AgentQueryRequest, AgentQueryResponse
 from backend.app.schemas.alert import AlertResponse, AlertStatusUpdate
 from backend.app.schemas.auth import AuthUser, ProfileCreate, ProfileResponse, UserRole
+from backend.app.schemas.chat import (
+    ChatMessageCreate,
+    ChatSessionCreate,
+    ChatSessionResponse,
+    ChatTurnResponse,
+)
 from backend.app.schemas.common import PaginatedResponse
 from backend.app.schemas.followup import FollowUpCreate, FollowUpResponse
 from backend.app.schemas.health import HealthStatus
@@ -29,6 +36,8 @@ from backend.app.schemas.prediction import PredictionRequest, PredictionResponse
 from backend.app.schemas.symptom import SymptomResponse, SymptomSubmission
 from backend.app.schemas.timeline import RiskTimelineResponse
 from backend.app.schemas.visit import VisitCreate, VisitResponse
+from backend.app.services.agent_service import agent_service
+from backend.app.services.chat_service import chat_service
 from backend.app.services.coordination_service import coordination_service
 from backend.app.services.health_service import health_record_service, symptom_service
 from backend.app.services.prediction_service import prediction_service
@@ -287,4 +296,60 @@ async def get_risk_timeline(
 ) -> RiskTimelineResponse:
     """Return longitudinal risk timeline enforcing patient isolation and ASHA assignment boundaries."""
     return coordination_service.get_risk_timeline(mother_id, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 11. Chat Sessions [IMPLEMENTED - Phase 6]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/chat/sessions",
+    response_model=ChatSessionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create Chat Session",
+    description="Creates a new chat session for an authorized mother.",
+)
+async def create_chat_session(
+    payload: ChatSessionCreate,
+    current_user: AuthUser = Depends(get_current_user),
+) -> ChatSessionResponse:
+    """Create a new chat session enforcing patient ownership and ASHA assignment boundaries."""
+    return chat_service.create_session(payload, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 12. Chat Messages [IMPLEMENTED - Phase 6]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/chat/sessions/{session_id}/messages",
+    response_model=ChatTurnResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Submit Chat Message",
+    description="Submits a message to an authorized chat session, evaluates safety deterministically, and returns the assistant response with authoritative safety state.",
+)
+async def send_chat_message(
+    session_id: UUID,
+    payload: ChatMessageCreate,
+    current_user: AuthUser = Depends(get_current_user),
+) -> ChatTurnResponse:
+    """Submit a chat message and receive an assistant response with authoritative safety state."""
+    return chat_service.send_message(session_id, payload, current_user)
+
+
+# ------------------------------------------------------------------------------
+# 13. Agent Decision-Support Query [IMPLEMENTED - Phase 6]
+# ------------------------------------------------------------------------------
+@api_router.post(
+    "/agent/query",
+    response_model=AgentQueryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Query Decision-Support Agent",
+    description="Queries the decision-support agent with authorized tools and deterministic safety precedence.",
+)
+async def query_agent(
+    payload: AgentQueryRequest,
+    current_user: AuthUser = Depends(get_current_user),
+) -> AgentQueryResponse:
+    """Execute an authorized agent decision-support query with explicit tool allowlist and safety evaluation."""
+    return agent_service.execute_query(payload, current_user)
+
 
