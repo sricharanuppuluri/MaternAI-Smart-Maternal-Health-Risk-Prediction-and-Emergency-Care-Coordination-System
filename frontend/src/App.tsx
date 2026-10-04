@@ -60,6 +60,8 @@ export const App: React.FC = () => {
               <Route index element={<AshaDashboardPage />} />
               <Route path="alerts" element={<AlertsQueuePage />} />
               <Route path="mothers" element={<AssignedMothersPage />} />
+              <Route path="mothers/:motherId/timeline" element={<RiskTimelinePage />} />
+              <Route path="mothers/:motherId/assistant" element={<AiAssistantPage />} />
             </Route>
 
             {/* Catch-all 404 */}

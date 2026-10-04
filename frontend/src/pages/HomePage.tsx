@@ -44,7 +44,7 @@ export const HomePage: React.FC = () => {
       {/* Hero Section */}
       <section className="hero-section" aria-labelledby="hero-title">
         <div className="hero-content">
-          <Badge label="Phase 1 Foundation" variant="info" className="mb-2" />
+          <Badge label="Integrated Care System" variant="info" className="mb-2" />
           <h1 id="hero-title" className="hero-title">
             Smart Maternal Health Risk Prediction & Emergency Care Coordination
           </h1>

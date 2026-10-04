@@ -1,7 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card, Badge, Button } from '../../components/common';
 
 export const AlertsQueuePage: React.FC = () => {
+  const [isAcknowledged, setIsAcknowledged] = useState(false);
+
   return (
     <div className="portal-page alerts-queue-page" role="region" aria-labelledby="alerts-title">
       <header className="page-header">
@@ -32,16 +35,24 @@ export const AlertsQueuePage: React.FC = () => {
               </p>
             </div>
 
-            <div className="alert-actions mt-3 flex gap-2">
-              <Button variant="primary" size="sm">
-                Acknowledge Case
+            <div className="alert-actions mt-3 flex flex-wrap gap-2">
+              <Button
+                variant={isAcknowledged ? 'outline' : 'primary'}
+                size="sm"
+                onClick={() => setIsAcknowledged(true)}
+              >
+                {isAcknowledged ? '✓ Acknowledged' : 'Acknowledge Case'}
               </Button>
-              <Button variant="outline" size="sm">
-                Log Follow-up Visit
-              </Button>
-              <Button variant="secondary" size="sm">
-                Call Mother (+91 9876543211)
-              </Button>
+              <Link to="/asha/mothers/2/timeline">
+                <Button variant="outline" size="sm">
+                  View Patient Timeline
+                </Button>
+              </Link>
+              <Link to="/asha/mothers/2/assistant">
+                <Button variant="secondary" size="sm">
+                  Clinical Decision Support
+                </Button>
+              </Link>
             </div>
           </div>
         </div>
