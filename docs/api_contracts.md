@@ -407,11 +407,11 @@ List endpoints requiring pagination use `page` and `size` query parameters:
 - **Request Body (`ChatMessageCreate`)**:
 ```json
 {
-  "content": "I have been experiencing a mild headache and fever since yesterday.",
+  "content": "Can you explain what maternal health records are currently tracked?",
   "language": "en"
 }
 ```
-  *(Note: Request schema enforces `extra='forbid'`. Any attempt by client to inject `safety_state`, `sender_role`, or overrides is rejected with 422).*
+  *(Note: Request schema enforces `extra='forbid'`. Any attempt by client to inject `safety_state`, `sender_role`, or safety policy overrides is rejected with 422 Unprocessable Entity).*
 - **Response Body (`ChatTurnResponse`)** (HTTP 201 Created):
 ```json
 {
@@ -420,10 +420,10 @@ List endpoints requiring pagination use `page` and `size` query parameters:
     "id": "923e4567-e89b-12d3-a456-426614174011",
     "session_id": "823e4567-e89b-12d3-a456-426614174010",
     "sender_role": "USER",
-    "content": "I have been experiencing a mild headache and fever since yesterday.",
+    "content": "Can you explain what maternal health records are currently tracked?",
     "metadata": {
       "language": "en",
-      "authoritative_safety_state": "CONCERNING"
+      "authoritative_safety_state": "CLEAR"
     },
     "created_at": "2026-10-04T10:05:00Z"
   },
@@ -431,26 +431,26 @@ List endpoints requiring pagination use `page` and `size` query parameters:
     "id": "923e4567-e89b-12d3-a456-426614174012",
     "session_id": "823e4567-e89b-12d3-a456-426614174010",
     "sender_role": "ASSISTANT",
-    "content": "CONCERNING SYMPTOM NOTICE: Your report mentions symptoms that warrant prompt attention. Please consult your assigned ASHA worker or healthcare provider for clinical evaluation.",
+    "content": "Authoritative safety state: CLEAR. Message received and logged in care session. Detailed clinical safety policy is pending authoritative specification.",
     "metadata": {
-      "safety_state": "CONCERNING",
+      "safety_state": "CLEAR",
       "language": "en"
     },
     "created_at": "2026-10-04T10:05:01Z"
   },
-  "safety_state": "CONCERNING",
-  "safety_events": [
-    "Concerning symptom keyword detected: 'fever'",
-    "Concerning symptom keyword detected: 'headache'"
-  ],
+  "safety_state": "CLEAR",
+  "safety_events": [],
   "disclaimer": "MaternAI provides maternal decision support and educational guidance only. It does not replace professional medical diagnosis, advice, or treatment."
 }
 ```
-- **Authoritative Safety Evaluation**:
-  - `SafetyStatus`: `CLEAR | CONCERNING | EMERGENCY`.
-  - Backend is 100% authoritative for safety state.
-  - If `EMERGENCY` is triggered: records an authoritative `safety_events` row in DB, sets `safety_state = EMERGENCY`, and assistant message provides emergency escalation guidance.
-  - Distinct from clinical screening `risk_level` (`LOW | MEDIUM | HIGH`). No unapproved conversions.
+- **Authoritative Safety Evaluation & Policy Boundary**:
+  - `SafetyStatus`: `CLEAR | CONCERNING | EMERGENCY` is the authoritative safety-state contract.
+  - Clinical criteria for assigning those states must come exclusively from the authoritative safety policy engine (`SafetyEngine`).
+  - No speculative symptom keyword mappings (e.g. fever -> CONCERNING, bleeding -> EMERGENCY) or invented clinical escalation rules are hardcoded.
+  - Where clinical policy is pending authoritative specification, the backend deterministically maintains an explicit service boundary returning `CLEAR`.
+  - Assistant content remains neutral decision-support / informational output and must not invent treatment instructions, referral requirements, urgency rules, monitoring schedules, or diagnosis claims.
+  - `SafetyStatus` (`CLEAR | CONCERNING | EMERGENCY`) and `MaternalRiskLevel` (`LOW | MEDIUM | HIGH`) remain strictly separate; the assistant/agent cannot derive or override either state.
+  - When an authoritative safety policy rule triggers `EMERGENCY` or `CONCERNING`, the backend immutably records an authoritative row in `safety_events`.
 - **Error Responses**:
   - `401 Unauthorized`: Missing or invalid Bearer token.
   - `403 Forbidden`: Cross-patient / unassigned session access.
@@ -491,7 +491,7 @@ List endpoints requiring pagination use `page` and `size` query parameters:
 {
   "mother_id": "223e4567-e89b-12d3-a456-426614174001",
   "query": "What are my upcoming visits and risk factors?",
-  "response": "Decision Support Summary: Patient baseline records and recent observations are within regular tracking parameters.\n\nAuthorized Context Evaluated:\n- get_upcoming_visits: Retrieved 1 visit(s) and 1 follow-up task(s).\n- explain_risk_factors: Latest screening tier: LOW. 2 contributing factor(s).\n\nGuidance: Maintain routine antenatal visits and standard care coordination.",
+  "response": "Authoritative Safety State: CLEAR.\n\nAuthorized Context Evaluated:\n- get_upcoming_visits: Retrieved 1 visit(s) and 1 follow-up task(s).\n- explain_risk_factors: Latest screening tier: LOW. 2 contributing factor(s).",
   "safety_state": "CLEAR",
   "tools_invoked": [
     {
@@ -520,12 +520,15 @@ List endpoints requiring pagination use `page` and `size` query parameters:
   "created_at": "2026-10-04T10:10:00Z"
 }
 ```
-- **Deterministic Safety Precedence**:
-  - Acute emergency symptoms in query trigger `safety_state = EMERGENCY`, record an authoritative safety event in DB, and override agent reasoning with emergency triage escalation notice.
+- **Authoritative Safety Precedence & Policy Boundary**:
+  - `safety_state` is determined exclusively by the backend `SafetyEngine` policy boundary.
+  - The agent reasoning or LLM cannot override, infer, or fabricate the safety state.
+  - The agent output reports factual data from authorized tools without independent clinical reinterpretation or invented care recommendations.
+  - `SafetyStatus` (`CLEAR | CONCERNING | EMERGENCY`) and `MaternalRiskLevel` (`LOW | MEDIUM | HIGH`) remain strictly separate; the agent cannot derive or override either state.
 - **Error Responses**:
   - `401 Unauthorized`: Missing or invalid Bearer token.
   - `403 Forbidden`: Cross-patient / unassigned access.
-  - `422 Unprocessable Entity`: Validation error or unauthorized tool requested.
+  - `422 Unprocessable Entity`: Validation error, unapproved tool requested, or attempted client field injection.
 - **Audit Behavior**: Emits `AGENT_QUERY` in `audit_logs`.
 
 
