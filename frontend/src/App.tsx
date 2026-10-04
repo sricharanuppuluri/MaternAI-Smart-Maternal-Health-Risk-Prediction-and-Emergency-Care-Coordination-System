@@ -11,6 +11,7 @@ import {
   MotherDashboardPage,
   HealthRecordEntryPage,
   RiskTimelinePage,
+  AiAssistantPage,
   AshaDashboardPage,
   AlertsQueuePage,
   AssignedMothersPage,
@@ -44,6 +45,7 @@ export const App: React.FC = () => {
               <Route index element={<MotherDashboardPage />} />
               <Route path="health-entry" element={<HealthRecordEntryPage />} />
               <Route path="risk-timeline" element={<RiskTimelinePage />} />
+              <Route path="ai-assistant" element={<AiAssistantPage />} />
             </Route>
 
             {/* ASHA Portal (Protected: ASHA role) */}

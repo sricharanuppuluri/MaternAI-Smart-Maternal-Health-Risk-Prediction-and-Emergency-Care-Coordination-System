@@ -68,7 +68,12 @@ export const MotherDashboardPage: React.FC = () => {
             Maternal Health Summary & Clinical Risk Screening Portal
           </p>
         </div>
-        <div className="header-actions">
+        <div className="header-actions flex items-center gap-2">
+          <Link to="/mother/ai-assistant">
+            <Button variant="outline">
+              AI Care Assistant
+            </Button>
+          </Link>
           <Link to="/mother/health-entry">
             <Button variant="primary">
               + Record Health Check
