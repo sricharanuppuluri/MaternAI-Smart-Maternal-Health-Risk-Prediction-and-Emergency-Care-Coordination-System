@@ -42,6 +42,10 @@ class SafetyEngine:
         """
         self._rules.append(rule_fn)
 
+    def clear_rules(self):
+        """Clear all registered safety rules (used for test isolation / reset)."""
+        self._rules.clear()
+
     def evaluate(
         self,
         vitals: Optional[Dict[str, Any]] = None,

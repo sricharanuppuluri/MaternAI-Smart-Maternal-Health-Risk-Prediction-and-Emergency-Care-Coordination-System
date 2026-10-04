@@ -3,13 +3,13 @@
 Enforces:
 - Authenticated patient ownership (Mother can only access own chat sessions).
 - ASHA assignment boundary (ASHA can only access assigned mothers' sessions).
-- Authoritative deterministic safety evaluation (CLEAR, CONCERNING, EMERGENCY).
+- Authoritative deterministic safety evaluation (CLEAR, CONCERNING, EMERGENCY) via backend safety engine.
 - Client cannot override, fabricate, or manipulate authoritative safety state.
+- Absence of unapproved symptom keyword heuristics or invented clinical guidance.
 - Auditability of all chat sessions and message exchanges.
 """
 
 from datetime import datetime, timezone
-import re
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID, uuid4
 
@@ -26,38 +26,6 @@ from backend.app.schemas.chat import (
     MessageItem,
     MessageSenderRole,
 )
-
-# Emergency keywords indicating acute maternal red flags
-EMERGENCY_KEYWORDS = [
-    r"\bbleeding\b",
-    r"\bhemorrhage\b",
-    r"\bconvulsion\b",
-    r"\bseizure\b",
-    r"\bunconscious\b",
-    r"\bchest pain\b",
-    r"\bwater broke\b",
-    r"\bwater breaking\b",
-    r"\bno movement\b",
-    r"\breduced movement\b",
-    r"\bvision loss\b",
-    r"\bblurred vision\b",
-]
-
-# Concerning keywords indicating potential maternal complications
-CONCERNING_KEYWORDS = [
-    r"\bfever\b",
-    r"\bchills\b",
-    r"\bswelling\b",
-    r"\bedema\b",
-    r"\bsevere headache\b",
-    r"\bheadache\b",
-    r"\bvomiting\b",
-    r"\bdizziness\b",
-    r"\bdizzy\b",
-    r"\bpain\b",
-    r"\bcramps\b",
-    r"\bcramping\b",
-]
 
 
 class ChatService:
@@ -127,54 +95,59 @@ class ChatService:
 
     def _evaluate_message_safety(
         self,
-        content: str,
         mother_id: UUID,
     ) -> Tuple[SafetyStatus, List[str], str]:
-        """Evaluate message content and clinical context deterministically for safety state."""
-        content_lower = content.lower()
-        triggered_rules: List[str] = []
+        """Evaluate maternal safety status via the authoritative safety policy engine.
 
-        # 1. Deterministic check for emergency text triggers
-        for pattern in EMERGENCY_KEYWORDS:
-            if re.search(pattern, content_lower):
-                matched = pattern.replace(r"\b", "").strip()
-                triggered_rules.append(f"Emergency symptom keyword detected: '{matched}'")
+        The safety-state determination remains behind an explicit authoritative safety-policy boundary.
+        Clinical criteria are not fabricated or inferred from text keywords.
+        Where clinical policy is pending authoritative specification, the engine deterministically
+        returns CLEAR while preserving the extension boundary for validated rules.
+        """
+        recent_records = self.repo.list_health_records(mother_id)
+        latest_record = recent_records[0] if recent_records else None
+        vitals_dict = latest_record.model_dump() if latest_record else None
 
-        if triggered_rules:
-            # Authoritative emergency
+        recent_symptoms = self.repo.list_symptoms(mother_id)
+        symptoms_eval = (
+            [{"symptom_code": s.symptom_code, "severity": s.severity} for s in recent_symptoms]
+            if recent_symptoms
+            else None
+        )
+
+        safety_result = self.safety_engine.evaluate(vitals=vitals_dict, symptoms=symptoms_eval)
+        safety_status = safety_result.status
+        triggered_rules = list(safety_result.triggered_rules)
+
+        if safety_status == SafetyStatus.EMERGENCY:
             self.repo.add_safety_event(
                 mother_id=mother_id,
                 safety_status=SafetyStatus.EMERGENCY.value,
-                trigger_reason="; ".join(triggered_rules),
-                details={"action_required": "Emergency medical evaluation required immediately"},
+                trigger_reason="; ".join(triggered_rules) if triggered_rules else "Authoritative emergency policy triggered",
+                details={"action_required": safety_result.action_required or "Emergency clinical evaluation required"},
             )
-            guidance = (
-                "EMERGENCY ADVISORY: Your message indicates symptoms requiring immediate clinical evaluation. "
-                "Please go to the nearest emergency health facility or hospital immediately, or contact emergency medical services. "
-                "An urgent safety event has been recorded."
+            reply = (
+                "Authoritative safety state: EMERGENCY. "
+                f"Triggered clinical safety rules: {'; '.join(triggered_rules) if triggered_rules else 'Authoritative emergency policy triggered.'}"
             )
-            return SafetyStatus.EMERGENCY, triggered_rules, guidance
-
-        # 2. Deterministic check for concerning text triggers
-        for pattern in CONCERNING_KEYWORDS:
-            if re.search(pattern, content_lower):
-                matched = pattern.replace(r"\b", "").strip()
-                triggered_rules.append(f"Concerning symptom keyword detected: '{matched}'")
-
-        if triggered_rules:
-            guidance = (
-                "CONCERNING SYMPTOM NOTICE: Your report mentions symptoms that warrant prompt attention. "
-                "Please consult your assigned ASHA worker or healthcare provider for clinical evaluation."
+        elif safety_status == SafetyStatus.CONCERNING:
+            self.repo.add_safety_event(
+                mother_id=mother_id,
+                safety_status=SafetyStatus.CONCERNING.value,
+                trigger_reason="; ".join(triggered_rules) if triggered_rules else "Authoritative concerning policy triggered",
+                details={"action_required": safety_result.action_required or "Clinical review recommended"},
             )
-            return SafetyStatus.CONCERNING, triggered_rules, guidance
+            reply = (
+                "Authoritative safety state: CONCERNING. "
+                f"Triggered clinical safety rules: {'; '.join(triggered_rules) if triggered_rules else 'Authoritative concerning policy triggered.'}"
+            )
+        else:
+            reply = (
+                "Authoritative safety state: CLEAR. "
+                "Message received and logged in care session. Detailed clinical safety policy is pending authoritative specification."
+            )
 
-        # 3. Clear / Routine maternal guidance
-        guidance = (
-            "Maternal Care Guidance: Thank you for your message. For routine prenatal care, ensure you attend all scheduled "
-            "antenatal checkups, take prescribed supplements (such as iron and folic acid as instructed by your doctor), "
-            "stay well-hydrated, and report any new or worsening symptoms promptly."
-        )
-        return SafetyStatus.CLEAR, [], guidance
+        return safety_status, triggered_rules, reply
 
     def send_message(
         self,
@@ -202,9 +175,8 @@ class ChatService:
 
         now = datetime.now(timezone.utc)
 
-        # Authoritative safety evaluation (client-submitted safety claims are never trusted)
+        # Authoritative safety evaluation (client-submitted claims are never trusted)
         safety_status, triggered_rules, assistant_reply = self._evaluate_message_safety(
-            payload.content,
             session_mother_id,
         )
 
@@ -274,4 +246,3 @@ class ChatService:
 
 
 chat_service = ChatService()
-

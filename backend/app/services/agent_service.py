@@ -4,11 +4,11 @@ Enforces:
 - Explicit allowlist of authorized agent decision-support tools.
 - Strict authentication, patient ownership, and ASHA assignment boundaries.
 - Deterministic safety evaluation taking strict precedence over AI/LLM reasoning.
+- Prevention of invented clinical recommendations or diagnosis claims.
 - Auditing of all agent queries, tool invocations, and safety outcomes.
 """
 
 from datetime import datetime, timezone
-import re
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 
@@ -27,37 +27,6 @@ from backend.app.schemas.auth import AuthUser, UserRole
 
 # Permitted tools explicit allowlist
 AUTHORIZED_TOOLS_ALLOWLIST = {tool.value for tool in AgentToolName}
-
-# Emergency keywords indicating acute maternal red flags
-AGENT_EMERGENCY_KEYWORDS = [
-    r"\bbleeding\b",
-    r"\bhemorrhage\b",
-    r"\bconvulsion\b",
-    r"\bseizure\b",
-    r"\bunconscious\b",
-    r"\bchest pain\b",
-    r"\bwater broke\b",
-    r"\bwater breaking\b",
-    r"\bno movement\b",
-    r"\breduced movement\b",
-    r"\bvision loss\b",
-    r"\bblurred vision\b",
-]
-
-# Concerning keywords
-AGENT_CONCERNING_KEYWORDS = [
-    r"\bfever\b",
-    r"\bchills\b",
-    r"\bswelling\b",
-    r"\bedema\b",
-    r"\bsevere headache\b",
-    r"\bheadache\b",
-    r"\bvomiting\b",
-    r"\bdizziness\b",
-    r"\bdizzy\b",
-    r"\bpain\b",
-    r"\bcramps\b",
-]
 
 
 class AgentService:
@@ -109,15 +78,17 @@ class AgentService:
                     summary="Mother profile initialized with default baseline.",
                     data={"mother_id": str(mother_id), "status": "active"},
                 )
+            last_risk = mother_prof.get("last_risk_level")
+            last_risk_val = last_risk.value if hasattr(last_risk, "value") else (str(last_risk) if last_risk else None)
             return AgentToolExecution(
                 tool_name=tool_name,
                 status=ToolExecutionStatus.SUCCESS,
-                summary=f"Profile retrieved: assigned ASHA={mother_prof.get('assigned_asha_id')}, last risk={mother_prof.get('last_risk_level')}",
+                summary=f"Profile retrieved: assigned ASHA={mother_prof.get('assigned_asha_id')}, last risk={last_risk_val}",
                 data={
                     "mother_id": str(mother_id),
                     "full_name": mother_prof.get("full_name"),
                     "assigned_asha_id": str(mother_prof.get("assigned_asha_id")) if mother_prof.get("assigned_asha_id") else None,
-                    "last_risk_level": mother_prof.get("last_risk_level").value if mother_prof.get("last_risk_level") else None,
+                    "last_risk_level": last_risk_val,
                 },
             )
 
@@ -207,36 +178,44 @@ class AgentService:
 
     def _evaluate_query_safety(
         self,
-        query: str,
         mother_id: UUID,
     ) -> Tuple[SafetyStatus, List[str]]:
-        """Evaluate agent query deterministically for clinical safety triggers."""
-        q_lower = query.lower()
-        triggered: List[str] = []
+        """Evaluate maternal safety status via the authoritative safety policy engine.
 
-        for pattern in AGENT_EMERGENCY_KEYWORDS:
-            if re.search(pattern, q_lower):
-                matched = pattern.replace(r"\b", "").strip()
-                triggered.append(f"Acute emergency symptom detected in query: '{matched}'")
+        The safety-state determination remains behind an explicit authoritative safety-policy boundary.
+        Clinical criteria are evaluated by SafetyEngine without ad-hoc text keyword rules.
+        """
+        recent_records = self.repo.list_health_records(mother_id)
+        latest_record = recent_records[0] if recent_records else None
+        vitals_dict = latest_record.model_dump() if latest_record else None
 
-        if triggered:
+        recent_symptoms = self.repo.list_symptoms(mother_id)
+        symptoms_eval = (
+            [{"symptom_code": s.symptom_code, "severity": s.severity} for s in recent_symptoms]
+            if recent_symptoms
+            else None
+        )
+
+        safety_result = self.safety_engine.evaluate(vitals=vitals_dict, symptoms=symptoms_eval)
+        safety_status = safety_result.status
+        triggered_rules = list(safety_result.triggered_rules)
+
+        if safety_status == SafetyStatus.EMERGENCY:
             self.repo.add_safety_event(
                 mother_id=mother_id,
                 safety_status=SafetyStatus.EMERGENCY.value,
-                trigger_reason="; ".join(triggered),
-                details={"action_required": "Immediate emergency triage escalation"},
+                trigger_reason="; ".join(triggered_rules) if triggered_rules else "Authoritative emergency policy triggered",
+                details={"action_required": safety_result.action_required or "Emergency clinical evaluation required"},
             )
-            return SafetyStatus.EMERGENCY, triggered
+        elif safety_status == SafetyStatus.CONCERNING:
+            self.repo.add_safety_event(
+                mother_id=mother_id,
+                safety_status=SafetyStatus.CONCERNING.value,
+                trigger_reason="; ".join(triggered_rules) if triggered_rules else "Authoritative concerning policy triggered",
+                details={"action_required": safety_result.action_required or "Clinical review recommended"},
+            )
 
-        for pattern in AGENT_CONCERNING_KEYWORDS:
-            if re.search(pattern, q_lower):
-                matched = pattern.replace(r"\b", "").strip()
-                triggered.append(f"Concerning symptom detected in query: '{matched}'")
-
-        if triggered:
-            return SafetyStatus.CONCERNING, triggered
-
-        return SafetyStatus.CLEAR, []
+        return safety_status, triggered_rules
 
     def execute_query(
         self,
@@ -248,7 +227,7 @@ class AgentService:
         now = datetime.now(timezone.utc)
 
         # 1. Authoritative safety check
-        safety_status, safety_rules = self._evaluate_query_safety(payload.query, target_mother_id)
+        safety_status, safety_rules = self._evaluate_query_safety(target_mother_id)
 
         # 2. Determine and validate tools to invoke
         if payload.requested_tools is not None:
@@ -267,28 +246,15 @@ class AgentService:
             execution_record = self._execute_tool(tool_name, target_mother_id)
             tools_executed.append(execution_record)
 
-        # 4. Formulate structured response
+        # 4. Formulate structured response (neutral, informational decision-support only)
         tool_summaries = [f"- {t.tool_name.value}: {t.summary}" for t in tools_executed if t.summary]
         tools_text = "\n".join(tool_summaries) if tool_summaries else "No tools invoked."
 
-        if safety_status == SafetyStatus.EMERGENCY:
-            response_text = (
-                f"EMERGENCY CLINICAL NOTICE: Immediate emergency medical care is required based on symptoms reported in query: "
-                f"'{payload.query}'. An authoritative safety event has been generated. Please report to the nearest health facility immediately.\n\n"
-                f"Authorized Context Evaluated:\n{tools_text}"
-            )
-        elif safety_status == SafetyStatus.CONCERNING:
-            response_text = (
-                f"Decision Support Summary: The query reported concerning symptoms warranting clinical attention.\n\n"
-                f"Authorized Context Evaluated:\n{tools_text}\n\n"
-                f"Recommendation: Please consult your assigned ASHA worker or healthcare provider for follow-up evaluation."
-            )
-        else:
-            response_text = (
-                f"Decision Support Summary: Patient baseline records and recent observations are within regular tracking parameters.\n\n"
-                f"Authorized Context Evaluated:\n{tools_text}\n\n"
-                f"Guidance: Maintain routine antenatal visits and standard care coordination."
-            )
+        rules_info = f" Triggered safety rules: {'; '.join(safety_rules)}." if safety_rules else ""
+        response_text = (
+            f"Authoritative Safety State: {safety_status.value}.{rules_info}\n\n"
+            f"Authorized Context Evaluated:\n{tools_text}"
+        )
 
         # 5. Immutable audit logging
         self.repo.log_audit(
@@ -316,4 +282,3 @@ class AgentService:
 
 
 agent_service = AgentService()
-
