@@ -6,11 +6,15 @@
  * - Authoritative SafetyStatusBadge on assistant messages
  * - Safety events list when deterministic rules trigger
  * - Mandatory clinical decision-support disclaimer
+ * - Optional Text-to-Speech (TTS) listening action
  */
 
 import React from 'react';
 import type { MessageItem, SafetyStatus } from '../../types/ai';
+import type { VoiceSynthesisResponse } from '../../types/voice';
 import { SafetyStatusBadge } from './SafetyStatusBadge';
+import { VoiceAudioPlayer } from '../voice/VoiceAudioPlayer';
+import { Button } from '../common';
 import { formatDate } from '../../utils/formatters';
 
 export interface ChatMessageItemProps {
@@ -18,6 +22,9 @@ export interface ChatMessageItemProps {
   safetyState?: SafetyStatus | null;
   safetyEvents?: string[];
   disclaimer?: string | null;
+  onSynthesize?: (text: string) => void;
+  isSynthesizing?: boolean;
+  synthesizedAudio?: VoiceSynthesisResponse | null;
   className?: string;
 }
 
@@ -26,6 +33,9 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
   safetyState,
   safetyEvents = [],
   disclaimer,
+  onSynthesize,
+  isSynthesizing = false,
+  synthesizedAudio = null,
   className = '',
 }) => {
   const isUser = message.sender_role === 'USER';
@@ -57,6 +67,35 @@ export const ChatMessageItem: React.FC<ChatMessageItemProps> = ({
         <p className="message-content text-sm whitespace-pre-wrap m-0 leading-relaxed">
           {message.content}
         </p>
+
+        {/* Assistant Audio (TTS) Section */}
+        {!isUser && onSynthesize && (
+          <div className="assistant-voice-tts mt-2 pt-2 border-t space-y-2">
+            {!synthesizedAudio ? (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onSynthesize(message.content)}
+                  disabled={isSynthesizing}
+                  isLoading={isSynthesizing}
+                  className="text-[11px] py-0.5 px-2"
+                  aria-label="Listen to assistant message via Text-to-Speech"
+                >
+                  {isSynthesizing ? 'Synthesizing...' : 'Listen (TTS)'}
+                </Button>
+              </div>
+            ) : (
+              <VoiceAudioPlayer
+                audioContent={synthesizedAudio.audio_content}
+                mimeType={synthesizedAudio.mime_type}
+                durationSeconds={synthesizedAudio.duration_seconds}
+                label="Spoken Guidance"
+                autoPlay={false}
+              />
+            )}
+          </div>
+        )}
 
         {/* Assistant Safety Presentation */}
         {!isUser && safetyState && (
