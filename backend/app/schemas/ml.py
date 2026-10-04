@@ -20,4 +20,6 @@ class MLRiskInput(BaseModel):
     blood_sugar: Optional[float] = None
     weight_kg: Optional[float] = None
     pregnancy_week: Optional[int] = None
+    body_temperature: Optional[float] = None
+    heart_rate: Optional[float] = None
     symptom_features: Dict[str, Union[int, float, bool]] = Field(default_factory=dict)

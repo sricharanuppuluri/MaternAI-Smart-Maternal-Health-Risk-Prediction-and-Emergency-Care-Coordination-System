@@ -120,6 +120,8 @@ export interface MLRiskInput {
   blood_sugar?: number | null;
   weight_kg?: number | null;
   pregnancy_week?: number | null;
+  body_temperature?: number | null;
+  heart_rate?: number | null;
   symptom_features?: Record<string, number | boolean | string>;
 }
 

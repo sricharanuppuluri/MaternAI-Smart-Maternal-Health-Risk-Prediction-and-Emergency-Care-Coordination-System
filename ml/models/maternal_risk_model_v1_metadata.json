@@ -1,0 +1,191 @@
+{
+  "model_version": "gradient-boosting-v1.0",
+  "feature_schema_version": "schema-v1",
+  "algorithm": "Gradient Boosting",
+  "training_timestamp": "2026-10-04T06:45:41.411352+00:00",
+  "random_seed": 42,
+  "dataset": {
+    "name": "UCI Maternal Health Risk Data Set (#863)",
+    "doi": "10.24432/C5DP5D",
+    "license": "CC BY 4.0",
+    "raw_samples": 1014,
+    "unambiguous_profiles": 381,
+    "excluded_conflicting_profiles": 35,
+    "train_samples": 266,
+    "val_samples": 57,
+    "test_samples": 58
+  },
+  "feature_columns": [
+    "Age",
+    "SystolicBP",
+    "DiastolicBP",
+    "BS",
+    "BodyTemp",
+    "HeartRate"
+  ],
+  "classes": [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ],
+  "feature_importances": {
+    "Age": 0.0968,
+    "SystolicBP": 0.2734,
+    "DiastolicBP": 0.0502,
+    "BS": 0.4125,
+    "BodyTemp": 0.1293,
+    "HeartRate": 0.0379
+  },
+  "test_metrics": {
+    "accuracy": 0.7931,
+    "f1_macro": 0.709,
+    "f1_weighted": 0.7637,
+    "roc_auc_ovr": 0.8612,
+    "high_risk_recall": 0.9333,
+    "high_risk_precision": 0.9333,
+    "high_risk_f1": 0.9333,
+    "mean_brier_score": 0.1069,
+    "brier_by_class": {
+      "HIGH": 0.030849950079514164,
+      "LOW": 0.14566640036294706,
+      "MEDIUM": 0.14412879343879312
+    },
+    "confusion_matrix": [
+      [
+        29,
+        1,
+        1
+      ],
+      [
+        9,
+        3,
+        0
+      ],
+      [
+        0,
+        1,
+        14
+      ]
+    ],
+    "classification_report": {
+      "LOW": {
+        "precision": 0.7631578947368421,
+        "recall": 0.9354838709677419,
+        "f1-score": 0.8405797101449275,
+        "support": 31.0
+      },
+      "MEDIUM": {
+        "precision": 0.6,
+        "recall": 0.25,
+        "f1-score": 0.35294117647058826,
+        "support": 12.0
+      },
+      "HIGH": {
+        "precision": 0.9333333333333333,
+        "recall": 0.9333333333333333,
+        "f1-score": 0.9333333333333333,
+        "support": 15.0
+      },
+      "accuracy": 0.7931034482758621,
+      "macro avg": {
+        "precision": 0.7654970760233919,
+        "recall": 0.7062724014336919,
+        "f1-score": 0.7089514066496164,
+        "support": 58.0
+      },
+      "weighted avg": {
+        "precision": 0.7734119782214156,
+        "recall": 0.7931034482758621,
+        "f1-score": 0.7636769850368933,
+        "support": 58.0
+      }
+    },
+    "model_classes": [
+      "HIGH",
+      "LOW",
+      "MEDIUM"
+    ]
+  },
+  "candidate_comparison": {
+    "Logistic Regression": {
+      "accuracy": 0.6379,
+      "f1_macro": 0.507,
+      "f1_weighted": 0.5971,
+      "roc_auc_ovr": 0.7058,
+      "high_risk_recall": 0.6,
+      "high_risk_precision": 0.6923,
+      "high_risk_f1": 0.6429,
+      "mean_brier_score": 0.1599,
+      "brier_by_class": {
+        "HIGH": 0.09749056201494341,
+        "LOW": 0.196048268113242,
+        "MEDIUM": 0.1860522592726844
+      },
+      "model_classes": [
+        "HIGH",
+        "LOW",
+        "MEDIUM"
+      ]
+    },
+    "Decision Tree": {
+      "accuracy": 0.7759,
+      "f1_macro": 0.7406,
+      "f1_weighted": 0.7765,
+      "roc_auc_ovr": 0.8453,
+      "high_risk_recall": 0.8667,
+      "high_risk_precision": 0.9286,
+      "high_risk_f1": 0.8966,
+      "mean_brier_score": 0.1235,
+      "brier_by_class": {
+        "HIGH": 0.05075246919186033,
+        "LOW": 0.16085800984141438,
+        "MEDIUM": 0.15885011715129968
+      },
+      "model_classes": [
+        "HIGH",
+        "LOW",
+        "MEDIUM"
+      ]
+    },
+    "Random Forest": {
+      "accuracy": 0.7414,
+      "f1_macro": 0.6122,
+      "f1_weighted": 0.6888,
+      "roc_auc_ovr": 0.8616,
+      "high_risk_recall": 0.9333,
+      "high_risk_precision": 0.875,
+      "high_risk_f1": 0.9032,
+      "mean_brier_score": 0.1053,
+      "brier_by_class": {
+        "HIGH": 0.035994469970153216,
+        "LOW": 0.13834438693817716,
+        "MEDIUM": 0.14170272904067535
+      },
+      "model_classes": [
+        "HIGH",
+        "LOW",
+        "MEDIUM"
+      ]
+    },
+    "Gradient Boosting": {
+      "accuracy": 0.7931,
+      "f1_macro": 0.709,
+      "f1_weighted": 0.7637,
+      "roc_auc_ovr": 0.8612,
+      "high_risk_recall": 0.9333,
+      "high_risk_precision": 0.9333,
+      "high_risk_f1": 0.9333,
+      "mean_brier_score": 0.1069,
+      "brier_by_class": {
+        "HIGH": 0.030849950079514164,
+        "LOW": 0.14566640036294706,
+        "MEDIUM": 0.14412879343879312
+      },
+      "model_classes": [
+        "HIGH",
+        "LOW",
+        "MEDIUM"
+      ]
+    }
+  }
+}

@@ -104,7 +104,16 @@ class MLPredictionService:
     """Service facade coordinating model inference."""
 
     def __init__(self, provider: Optional[ModelProvider] = None):
-        self._provider = provider or BaselineScreeningModel()
+        if provider is not None:
+            self._provider = provider
+        else:
+            # Attempt to instantiate production TrainedModelProvider if artifact exists
+            try:
+                from backend.app.ml.trained_provider import TrainedModelProvider
+                trained = TrainedModelProvider()
+                self._provider = trained if trained.is_loaded else BaselineScreeningModel()
+            except Exception:
+                self._provider = BaselineScreeningModel()
 
     def set_provider(self, provider: ModelProvider):
         """Allow injecting future trained ML model providers."""
