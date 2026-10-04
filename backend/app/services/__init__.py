@@ -14,6 +14,7 @@ from backend.app.services.health_service import (
     symptom_service,
 )
 from backend.app.services.prediction_service import PredictionService, prediction_service
+from backend.app.services.voice_service import VoiceService, voice_service
 
 __all__ = [
     "AgentService",
@@ -28,4 +29,7 @@ __all__ = [
     "symptom_service",
     "PredictionService",
     "prediction_service",
+    "VoiceService",
+    "voice_service",
 ]
+
