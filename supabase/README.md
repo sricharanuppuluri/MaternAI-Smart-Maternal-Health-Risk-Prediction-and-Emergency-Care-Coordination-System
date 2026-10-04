@@ -49,6 +49,12 @@ All 17 tables enforce Row Level Security (`ALTER TABLE ... ENABLE ROW LEVEL SECU
 
 ## Verification & Testing Boundaries
 
+- **Deterministic Repository Selection (PASSED - Phase 4)**:
+  - In production (`ENVIRONMENT=production`), the application deterministically requires and selects `SupabasePostgresRepository`. If configuration is missing, it fails closed at startup with `RuntimeError`, guaranteeing the local disk-backed repository cannot silently run in production.
+  - In local development and testing, `RepositoryStore` provides disk-backed relational SQL persistence (`data/maternai.db`) or in-memory testing (`:memory:`), ensuring complete schema compatibility across all 17 entities and verifying restart persistence.
+- **Supabase Client Scoping & Identity Propagation (PASSED - Phase 4)**:
+  - `get_authenticated_client(access_token)` propagates the user's verified Bearer JWT to PostgREST, ensuring PostgreSQL executes queries under `auth.uid()` and evaluates RLS policies.
+  - `get_service_client()` strictly restricts `SUPABASE_SERVICE_ROLE_KEY` to server-side tasks (`audit_logs`, `model_versions`, `safety_events`, profile bootstrapping) and is never accessible to frontend clients.
 - **Static Analysis & Contract Testing (PASSED)**: Executable via `pytest backend/tests/security/` (verifies SQL migration AST/regex invariants across all 17 tables, explicit `search_path = public, auth`, anti-escalation triggers, and audit log immutability).
 - **Relational SQL Persistence (PASSED - Phase 4)**: Application data across all 17 schema entities persists relationally to disk via `RepositoryStore`, ensuring data survives backend restarts.
 - **Live Supabase Container Integration Testing (DEFERRED)**: Runtime PostgreSQL execution of RLS policies and role-switching requires an active Supabase container or running PostgreSQL instance. When neither Docker, the Supabase CLI, nor local PostgreSQL (`psql`) are active on the host machine, live runtime execution is gracefully detected and skipped via `backend/tests/integration/test_supabase_rls_live.py`. Live DB RLS execution remains environment-dependent.
